@@ -134,8 +134,11 @@ function makeLightboxHarness() {
         getOriginalUrl(assetId) {
             return `/api/assets/${assetId}/original`;
         },
-        getThumbnailUrl() {
-            throw new Error('photo derivatives must not be requested by the lightbox');
+        getThumbnailUrl(assetId, size) {
+            if (size !== 'preview') {
+                throw new Error('the lightbox may only request the preview derivative');
+            }
+            return `/api/assets/${assetId}/thumbnail?size=preview`;
         },
     };
     const context = vm.createContext({
@@ -304,7 +307,18 @@ test('late metadata after close cannot reopen or update the closed photo', async
     assert.equal(harness.elements.lightbox.hidden, true);
 });
 
-test('original failure stays hidden, reports an accessible error, and keeps download available', async () => {
+test('RAW and other non-browser formats load the Immich preview instead of the original', async () => {
+    const harness = makeLightboxHarness();
+    await harness.lightbox.open(
+        photo('photo-a', { originalFileName: 'DSC0001.ARW', originalMimeType: 'image/x-sony-arw' }),
+        0,
+    );
+
+    assert.equal(harness.requests.length, 1);
+    assert.equal(harness.requests[0].url, '/api/assets/photo-a/thumbnail?size=preview');
+});
+
+test('original failure falls back to the preview, then reports an accessible error if that fails too', async () => {
     const harness = makeLightboxHarness();
     await harness.lightbox.open(photo('photo-a'), 0);
 
@@ -315,14 +329,22 @@ test('original failure stays hidden, reports an accessible error, and keeps down
     });
     await settle();
 
+    assert.equal(harness.requests.length, 2);
+    assert.equal(harness.requests[1].url, '/api/assets/photo-a/thumbnail?size=preview');
+    assert.equal(harness.elements.error.hidden, true);
+
+    harness.requests[1].result.resolve({ ok: false, status: 500, statusText: 'Error' });
+    await settle();
+
+    assert.equal(harness.requests.length, 2);
     assert.equal(harness.elements.image.hidden, true);
     assert.equal(harness.elements.error.hidden, false);
-    assert.match(harness.elements.error.textContent, /original/i);
+    assert.match(harness.elements.error.textContent, /could not be displayed/i);
     assert.equal(harness.elements.download.hidden, false);
     assert.equal(harness.elements.loading.hidden, true);
 });
 
-test('visible image decode failure releases its blob and reports the original error', async () => {
+test('visible image decode failure releases its blob and falls back to the preview', async () => {
     const harness = makeLightboxHarness();
     await harness.lightbox.open(photo('photo-a'), 0);
     await reachDecode(harness, 0);
@@ -333,10 +355,10 @@ test('visible image decode failure releases its blob and reports the original er
     harness.elements.image.decodeResult.reject(new Error('visible decode failed'));
     await settle();
 
-    assert.equal(harness.elements.image.hidden, true);
     assert.equal(harness.elements.image.src, '');
     assert.deepEqual(harness.revokedUrls, ['blob:photo-1']);
-    assert.equal(harness.elements.error.hidden, false);
+    assert.equal(harness.requests.length, 2);
+    assert.equal(harness.requests[1].url, '/api/assets/photo-a/thumbnail?size=preview');
 });
 
 test('closing aborts a pending original and clears decoded pixels and errors', async () => {

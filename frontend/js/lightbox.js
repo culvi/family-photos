@@ -348,13 +348,27 @@ const Lightbox = {
         };
     },
 
-    _displayImage(asset, generation) {
+    /** True when browsers can decode the original file directly. RAW (ARW, NEF, CR2,
+     *  DNG...), HEIC and TIFF are not, so those show Immich's JPEG preview instead. */
+    _isWebDisplayable(asset) {
+        const mime = (asset.originalMimeType || '').toLowerCase();
+        if (mime) return /^image\/(jpeg|png|gif|webp|avif)$/.test(mime);
+        const ext = (asset.originalFileName || '').split('.').pop().toLowerCase();
+        return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'].includes(ext);
+    },
+
+    _displayImage(asset, generation, forcePreview = false) {
         const img = this.elements.image;
         img.alt = asset.originalFileName || 'Photo';
         this.showLoading();
 
+        const usePreview = forcePreview || !this._isWebDisplayable(asset);
+        const src = usePreview
+            ? API.getThumbnailUrl(asset.id, 'preview')
+            : API.getOriginalUrl(asset.id);
+
         this.originalImage
-            .load(API.getOriginalUrl(asset.id))
+            .load(src)
             .then(async (decoded) => {
                 if (
                     generation !== this.mediaGeneration ||
@@ -402,10 +416,15 @@ const Lightbox = {
                     return;
                 }
 
+                if (!usePreview) {
+                    this._displayImage(asset, generation, true);
+                    return;
+                }
+
                 this.hideLoading();
                 if (this.elements.error) {
                     this.elements.error.textContent =
-                        'The original photo could not be displayed. You can still download it.';
+                        'This photo could not be displayed. You can still download it.';
                     this.elements.error.hidden = false;
                 }
                 console.error('Failed to display original photo:', error);
