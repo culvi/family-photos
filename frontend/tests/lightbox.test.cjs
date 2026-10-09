@@ -101,6 +101,9 @@ function makeLightboxHarness() {
         loading: { hidden: true },
         error: { hidden: true, textContent: '' },
         download: { dataset: {}, hidden: true, disabled: true },
+        share: { hidden: true, disabled: true },
+        copy: { hidden: true, disabled: true },
+        downloadOriginal: { hidden: true, textContent: '' },
         zoomToggle: { hidden: true, classList: classList(), setAttribute() {}, querySelector() { return null; } },
         media: {
             clientWidth: 1000,
@@ -143,6 +146,7 @@ function makeLightboxHarness() {
     };
     const context = vm.createContext({
         AbortController,
+        File,
         DOMException,
         Image: FakeImage,
         API,
@@ -404,4 +408,69 @@ test('zoom ceiling uses decoded original dimensions instead of metadata dimensio
     await settle();
 
     assert.equal(harness.lightbox._getMaxZoom(), 2);
+});
+
+test('RAW photos download and share as a JPEG named after the original, with the original offered separately', async () => {
+    const harness = makeLightboxHarness();
+    await harness.lightbox.open(
+        photo('photo-a', {
+            originalFileName: '2025-10-00851-Italy-WCN.ARW',
+            originalMimeType: 'image/x-sony-arw',
+            exifInfo: { fileSizeInByte: 47 * 1024 * 1024 },
+        }),
+        0,
+    );
+
+    assert.equal(harness.elements.download.disabled, true);
+    assert.equal(harness.elements.downloadOriginal.hidden, false);
+    assert.equal(harness.elements.downloadOriginal.textContent, 'Download original (ARW · 47.0 MB)');
+
+    await reachDecode(harness, 0);
+    harness.decoders[0].decodeResult.resolve();
+    await settle();
+    harness.elements.image.decodeResult.resolve();
+    await settle();
+
+    assert.equal(harness.elements.download.disabled, false);
+    assert.equal(harness.lightbox._displayedFile.name, '2025-10-00851-Italy-WCN.jpg');
+    assert.equal(harness.lightbox._displayedFile.type, 'image/jpeg');
+});
+
+test('browser-friendly originals download under their own name and hide the separate original link', async () => {
+    const harness = makeLightboxHarness();
+    await harness.lightbox.open(photo('photo-a', { originalFileName: 'beach.jpg' }), 0);
+    await reachDecode(harness, 0);
+    harness.decoders[0].decodeResult.resolve();
+    await settle();
+    harness.elements.image.decodeResult.resolve();
+    await settle();
+
+    assert.equal(harness.elements.downloadOriginal.hidden, true);
+    assert.equal(harness.lightbox._displayedFile.name, 'beach.jpg');
+});
+
+test('closing clears the displayed file and disables the photo actions', async () => {
+    const harness = makeLightboxHarness();
+    await harness.lightbox.open(photo('photo-a'), 0);
+    await reachDecode(harness, 0);
+    harness.decoders[0].decodeResult.resolve();
+    await settle();
+    harness.elements.image.decodeResult.resolve();
+    await settle();
+    assert.equal(harness.elements.download.disabled, false);
+
+    harness.lightbox.close();
+
+    assert.equal(harness.lightbox._displayedFile, null);
+    assert.equal(harness.elements.download.disabled, true);
+});
+
+test('videos hide download, share and copy', async () => {
+    const harness = makeLightboxHarness();
+    harness.lightbox.updateDownloadLink({ id: 'v', type: 'VIDEO', originalFileName: 'clip.mp4' });
+
+    assert.equal(harness.elements.download.hidden, true);
+    assert.equal(harness.elements.share.hidden, true);
+    assert.equal(harness.elements.copy.hidden, true);
+    assert.equal(harness.elements.downloadOriginal.hidden, true);
 });

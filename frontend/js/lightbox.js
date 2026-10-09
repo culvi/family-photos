@@ -15,6 +15,9 @@ const Lightbox = {
         loading: null,
         error: null,
         download: null,
+        share: null,
+        copy: null,
+        downloadOriginal: null,
         infoToggle: null,
         sidebar: null,
         sidebarClose: null,
@@ -29,6 +32,9 @@ const Lightbox = {
     _videoCleanup: null,
     originalImage: null,
     _originalDimensions: null,
+    // The exact file on screen (original or Immich preview). Download, share and copy
+    // all reuse it, so they're instant and never re-fetch.
+    _displayedFile: null,
 
     // Zoom/pan state for the image view. Scale is clamped to [MIN_ZOOM, maxZoom],
     // where maxZoom (see _getMaxZoom) uses the decoded original so "100%" always means
@@ -61,6 +67,9 @@ const Lightbox = {
         this.elements.loading = document.getElementById('lightbox-loading');
         this.elements.error = document.getElementById('lightbox-error');
         this.elements.download = document.getElementById('lightbox-download');
+        this.elements.share = document.getElementById('lightbox-share');
+        this.elements.copy = document.getElementById('lightbox-copy');
+        this.elements.downloadOriginal = document.getElementById('meta-download-original');
         this.elements.infoToggle = document.getElementById('lightbox-info-toggle');
         this.elements.sidebar = document.getElementById('lightbox-sidebar');
         this.elements.sidebarClose = document.getElementById('sidebar-close');
@@ -75,6 +84,20 @@ const Lightbox = {
         this.elements.infoToggle.addEventListener('click', () => this.toggleSidebar());
         this.elements.sidebarClose?.addEventListener('click', () => this.toggleSidebar());
         this.elements.download?.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.downloadDisplayed();
+        });
+        // Share and copy must start synchronously inside the tap (no await first),
+        // or iOS Safari drops the user-gesture permission.
+        this.elements.share?.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.shareDisplayed();
+        });
+        this.elements.copy?.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.copyDisplayed();
+        });
+        this.elements.downloadOriginal?.addEventListener('click', (e) => {
             e.preventDefault();
             this.downloadAsset();
         });
@@ -224,6 +247,8 @@ const Lightbox = {
 
         this.originalImage?.clear();
         this._originalDimensions = null;
+        this._displayedFile = null;
+        this._updateActionState();
 
         if (this.elements.error) {
             this.elements.error.hidden = true;
@@ -403,6 +428,8 @@ const Lightbox = {
                     width: decoded.naturalWidth,
                     height: decoded.naturalHeight,
                 };
+                this._displayedFile = this._makeFile(asset, decoded.blob, usePreview);
+                this._updateActionState();
                 img.hidden = false;
                 this.hideLoading();
                 this._updateZoomChip();
@@ -898,17 +925,142 @@ const Lightbox = {
     },
 
     updateDownloadLink(asset) {
-        if (!this.elements.download) return;
         const isVideo = asset.type === 'VIDEO';
-        this.elements.download.hidden = isVideo;
-        this.elements.download.disabled = isVideo;
+        const { share, copy, downloadOriginal } = this.elements;
 
-        if (isVideo) return;
+        if (this.elements.download) {
+            this.elements.download.hidden = isVideo;
+            this.elements.download.dataset.assetId = asset.id;
+            this.elements.download.dataset.fileName = asset.originalFileName || 'asset';
+        }
+        if (share) share.hidden = isVideo || !this._canShareFiles();
+        if (copy) copy.hidden = isVideo || !this._canCopyImage();
 
-        this.elements.download.hidden = false;
-        this.elements.download.disabled = false;
-        this.elements.download.dataset.assetId = asset.id;
-        this.elements.download.dataset.fileName = asset.originalFileName || 'asset';
+        // RAW/HEIC originals are offered separately; JPEG/PNG originals are already
+        // what the main Download button gives.
+        if (downloadOriginal) {
+            const showOriginal = !isVideo && !this._isWebDisplayable(asset);
+            downloadOriginal.hidden = !showOriginal;
+            if (showOriginal) {
+                const ext = (asset.originalFileName || '').split('.').pop().toUpperCase();
+                const bytes = asset.exifInfo?.fileSizeInByte;
+                const size = bytes ? ` · ${this.formatFileSize(bytes)}` : '';
+                downloadOriginal.textContent = `Download original (${ext}${size})`;
+            }
+        }
+        this._updateActionState();
+    },
+
+    /** Download/share/copy stay disabled until the photo's bytes are on screen. */
+    _updateActionState() {
+        const ready = Boolean(this._displayedFile);
+        for (const el of [this.elements.download, this.elements.share, this.elements.copy]) {
+            if (el) el.disabled = !ready;
+        }
+    },
+
+    _makeFile(asset, blob, usedPreview) {
+        try {
+            const type = blob?.type || 'image/jpeg';
+            const ext = {
+                'image/jpeg': 'jpg',
+                'image/png': 'png',
+                'image/webp': 'webp',
+                'image/gif': 'gif',
+                'image/avif': 'avif',
+            }[type] || 'jpg';
+            const original = asset.originalFileName || 'photo';
+            const name = usedPreview ? `${original.replace(/\.[^.]+$/, '')}.${ext}` : original;
+            return new File([blob], name, { type });
+        } catch {
+            return null;
+        }
+    },
+
+    _canShareFiles() {
+        try {
+            const nav = globalThis.navigator;
+            if (!nav?.canShare || typeof File === 'undefined') return false;
+            return nav.canShare({ files: [new File([''], 'test.jpg', { type: 'image/jpeg' })] });
+        } catch {
+            return false;
+        }
+    },
+
+    _canCopyImage() {
+        return Boolean(
+            globalThis.isSecureContext &&
+                globalThis.navigator?.clipboard?.write &&
+                typeof globalThis.ClipboardItem !== 'undefined',
+        );
+    },
+
+    /** Brief confirmation on a toolbar button (reuses the "active" pill style). */
+    _flash(button, label) {
+        if (!button) return;
+        const previous = button.getAttribute('aria-label');
+        button.classList.add('active');
+        button.setAttribute('aria-label', label);
+        button.title = label;
+        window.setTimeout(() => {
+            button.classList.remove('active');
+            button.setAttribute('aria-label', previous);
+            button.title = '';
+        }, 1400);
+    },
+
+    /** Save the photo exactly as shown (JPEG for RAW/HEIC, the original otherwise). */
+    downloadDisplayed() {
+        const file = this._displayedFile;
+        if (!file) return;
+        const url = window.URL.createObjectURL(file);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = file.name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+    },
+
+    shareDisplayed() {
+        const file = this._displayedFile;
+        if (!file) return;
+        globalThis.navigator.share({ files: [file] }).catch((error) => {
+            if (error?.name !== 'AbortError') {
+                console.error('Share failed:', error);
+                this._flash(this.elements.share, 'Share failed');
+            }
+        });
+    },
+
+    copyDisplayed() {
+        const file = this._displayedFile;
+        if (!file) return;
+        // Clipboards only reliably accept PNG. Hand ClipboardItem a promise so the
+        // write starts inside the tap even though the conversion is async.
+        const png = file.type === 'image/png' ? Promise.resolve(file) : this._toPng(file);
+        globalThis.navigator.clipboard
+            .write([new ClipboardItem({ 'image/png': png })])
+            .then(() => this._flash(this.elements.copy, 'Copied'))
+            .catch((error) => {
+                console.error('Copy failed:', error);
+                this._flash(this.elements.copy, 'Copy failed');
+            });
+    },
+
+    /** Re-encode as PNG, capped at 4096px on the long edge so huge originals stay fast. */
+    async _toPng(blob) {
+        const bitmap = await createImageBitmap(blob);
+        const scale = Math.min(1, 4096 / Math.max(bitmap.width, bitmap.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(bitmap.width * scale);
+        canvas.height = Math.round(bitmap.height * scale);
+        canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        bitmap.close?.();
+        return new Promise((resolve, reject) => {
+            canvas.toBlob((png) => (png ? resolve(png) : reject(new Error('PNG encode failed'))), 'image/png');
+        });
     },
 
     async downloadAsset() {

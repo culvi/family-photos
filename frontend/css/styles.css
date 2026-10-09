@@ -1527,3 +1527,26 @@ html[data-view="large"] .gallery-item img {
   color: var(--color-text-muted);
   font-size: 0.85rem;
 }
+
+/* Secondary "Download original" action in the info panel (RAW/HEIC files). */
+.metadata-link {
+  margin-top: 0.5rem;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--color-primary, #4250af);
+  font: inherit;
+  font-size: 0.875rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.metadata-link[hidden] {
+  display: none;
+}
+
+.lightbox-tool:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

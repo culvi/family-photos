@@ -40,6 +40,7 @@ class OriginalImage {
             this._controller = null;
             return {
                 url: objectUrl,
+                blob,
                 naturalWidth: image.naturalWidth,
                 naturalHeight: image.naturalHeight,
             };
