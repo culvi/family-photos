@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from ..auth import (
     SESSION_COOKIE,
@@ -19,6 +19,7 @@ from ..auth import (
 from ..config import settings
 from ..deps import STATIC_DIR, get_client
 from ..ratelimit import redeem_allowed
+from ..static_versioning import versioned_html
 from ..tokens import TokenStore, TokenRecord, normalize_token
 
 router = APIRouter()
@@ -30,6 +31,14 @@ def _static_file(name: str, *, missing: str | None = None) -> FileResponse:
     if not path.exists():
         raise HTTPException(status_code=404, detail=missing)
     return FileResponse(path)
+
+
+def _html_page(name: str, *, missing: str) -> HTMLResponse:
+    """App pages: always revalidated, with cache-busted JS/CSS links (see static_versioning)."""
+    path = STATIC_DIR / name
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=missing)
+    return HTMLResponse(versioned_html(path), headers={"Cache-Control": "no-cache"})
 
 
 @router.get("/api/health")
@@ -88,12 +97,12 @@ async def redeem_token(raw_token: str, request: Request):
 
 @router.get("/gate")
 async def gate_page():
-    return _static_file("gate.html", missing="gate page missing")
+    return _html_page("gate.html", missing="gate page missing")
 
 
 @router.get("/")
 async def index(_token: TokenRecord = Depends(require_token)):
-    return _static_file("index.html", missing="frontend missing")
+    return _html_page("index.html", missing="frontend missing")
 
 
 @router.get("/immich-logo.svg")

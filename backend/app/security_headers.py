@@ -26,6 +26,7 @@ CONTENT_SECURITY_POLICY = (
 )
 
 _DOCS_PREFIXES = ("/api/docs", "/openapi.json")
+_REVALIDATE_PREFIXES = ("/js/", "/css/")
 
 
 def install_security_headers(app: FastAPI) -> None:
@@ -36,6 +37,11 @@ def install_security_headers(app: FastAPI) -> None:
         if not request.url.path.startswith(_DOCS_PREFIXES):
             response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
             response.headers["X-Frame-Options"] = "DENY"
+
+        # Frontend code must never be served stale after a deploy: revalidate every time
+        # (cheap 304s via ETag). Media and API responses set their own caching.
+        if request.url.path.startswith(_REVALIDATE_PREFIXES) and "cache-control" not in response.headers:
+            response.headers["Cache-Control"] = "no-cache"
 
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"

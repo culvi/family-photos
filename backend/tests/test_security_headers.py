@@ -67,3 +67,23 @@ def test_hsts_only_set_for_https_public_base_url(app, monkeypatch):
     monkeypatch.setattr(settings, "public_base_url", "https://photos.example.com")
     resp = client.get("/plain")
     assert "strict-transport-security" in resp.headers
+
+
+def test_frontend_code_is_always_revalidated_but_other_caching_is_left_alone():
+    test_app = FastAPI()
+
+    @test_app.get("/js/app.js")
+    async def script():
+        return {"js": True}
+
+    @test_app.get("/api/assets/x/thumbnail")
+    async def thumb():
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse({}, headers={"Cache-Control": "private, max-age=86400"})
+
+    install_security_headers(test_app)
+    client = TestClient(test_app)
+
+    assert client.get("/js/app.js").headers["cache-control"] == "no-cache"
+    assert client.get("/api/assets/x/thumbnail").headers["cache-control"] == "private, max-age=86400"
