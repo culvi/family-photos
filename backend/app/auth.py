@@ -17,7 +17,9 @@ from .config import settings
 from .tokens import TokenRecord, TokenStore
 
 SESSION_COOKIE = "viewer_session"
-SESSION_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
+# A year: family enters the code once per device. Cloudflare Access (email sign-in) is the
+# gate that expires sooner; revoking a code still signs out everyone using it at once.
+SESSION_MAX_AGE = 60 * 60 * 24 * 365
 
 
 def _sign(payload_b64: str) -> str:
