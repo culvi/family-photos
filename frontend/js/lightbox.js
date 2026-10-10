@@ -89,16 +89,19 @@ const Lightbox = {
         this.elements.download?.addEventListener('click', (e) => {
             e.preventDefault();
             this.downloadDisplayed();
+            window.Presence?.logSave('download');
         });
         // Share and copy must start synchronously inside the tap (no await first),
         // or iOS Safari drops the user-gesture permission.
         this.elements.share?.addEventListener('click', (e) => {
             e.preventDefault();
             this.shareDisplayed();
+            window.Presence?.logSave('share');
         });
         this.elements.copy?.addEventListener('click', (e) => {
             e.preventDefault();
             this.copyDisplayed();
+            window.Presence?.logSave('copy');
         });
         this.elements.downloadOriginal?.addEventListener('click', (e) => {
             e.preventDefault();

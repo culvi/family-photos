@@ -42,11 +42,22 @@ class Settings(BaseSettings):
     map_style_dark: str = "https://tiles.immich.cloud/v1/style/dark.json"
     map_connect_src: str = "https://*.immich.cloud"
 
+    # Cloudflare Access sign-in: with both set, people signed in through Access are let
+    # in as themselves (no access code) and show up in "who's here". Team domain like
+    # "jarvis-homelab.cloudflareaccess.com"; AUD is the Access application's audience tag.
+    cf_access_team_domain: str = ""
+    cf_access_aud: str = ""
+    # Who may open the Usage page (emails, comma-separated).
+    admin_emails: Annotated[List[str], NoDecode] = []
+    # Display names for signed-in people, "email=Name" comma-separated. The name also
+    # picks their face from Immich's people. Unlisted emails show their email's first part.
+    members: Annotated[List[str], NoDecode] = []
+
     # Previews and originals persist under ./data so they survive image rebuilds.
     media_cache_dir: str = "/data/media-cache"
     media_cache_max_bytes: int = 8 * 1024 * 1024 * 1024
 
-    @field_validator("cors_origins", "trusted_proxy_ips", mode="before")
+    @field_validator("cors_origins", "trusted_proxy_ips", "admin_emails", "members", mode="before")
     @classmethod
     def parse_str_list(cls, v):
         if isinstance(v, str):

@@ -120,16 +120,62 @@ def resolve_token(request: Request) -> Optional[TokenRecord]:
     return record
 
 
+MEMBER_PREFIX = "member:"
+
+
+def _access_token(request) -> Optional[str]:
+    headers = getattr(request, "headers", None) or {}
+    cookies = getattr(request, "cookies", None) or {}
+    return headers.get("cf-access-jwt-assertion") or cookies.get("CF_Authorization")
+
+
+async def member_email(request) -> Optional[str]:
+    """The email Cloudflare Access signed this request in as, if it checks out."""
+    verifier = getattr(getattr(request.app, "state", None), "cf_verifier", None)
+    if verifier is None:
+        return None
+    state = getattr(request, "state", None)
+    if state is not None and hasattr(state, "member_email"):
+        return state.member_email
+    email = await verifier.email(_access_token(request))
+    if state is not None:
+        state.member_email = email
+    return email
+
+
+def member_record(email: str) -> TokenRecord:
+    """A full-library session for someone signed in through Cloudflare Access."""
+    return TokenRecord(
+        id=f"{MEMBER_PREFIX}{email}",
+        label=email,
+        created_at=0.0,
+        last_used_at=None,
+        revoked_at=None,
+        expires_at=None,
+        album_ids=None,
+    )
+
+
+async def resolve_identity(request) -> Optional[TokenRecord]:
+    """An access-code session if there is one, else a Cloudflare Access sign-in."""
+    record = resolve_token(request)
+    email = await member_email(request)
+    if record:
+        return record
+    return member_record(email) if email else None
+
+
 def current_token_id(request: Request) -> Optional[str]:
     record = resolve_token(request)
     return record.id if record else None
 
 
 async def require_token(request: Request) -> TokenRecord:
-    record = resolve_token(request)
+    record = await resolve_identity(request)
     if not record:
         raise HTTPException(status_code=401, detail="Authentication required")
-    request.app.state.token_store.touch(record.id)
+    if not record.id.startswith(MEMBER_PREFIX):
+        request.app.state.token_store.touch(record.id)
     return record
 
 
@@ -163,6 +209,6 @@ def install_auth_gate(app: FastAPI) -> None:
         path = request.url.path
         if path in _PUBLIC_PATHS or path.startswith(_PUBLIC_PREFIXES):
             return await call_next(request)
-        if not resolve_token(request):
+        if not await resolve_identity(request):
             return unauthenticated_response(request)
         return await call_next(request)

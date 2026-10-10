@@ -20,6 +20,7 @@ const App = {
         Filters.init();
         People.init();
         Places.init();
+        Presence.init(); // async; the gallery doesn't wait for it
         Scrubber.init();
 
         State.loadFromURL();

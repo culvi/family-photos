@@ -21,9 +21,11 @@ from .config import settings
 from .deps import STATIC_DIR
 from .media_cache import MediaCache
 from .memory_cache import cache_manager
-from .routers import access, activity, assets, map, people, search, social, timeline
+from .routers import access, activity, assets, map, people, presence, search, social, timeline
 from .security_headers import install_security_headers
+from .cf_access import AccessVerifier
 from .social_store import SocialStore
+from .usage_store import UsageStore
 from .tokens import TokenStore
 
 CACHE_CLEANUP_INTERVAL_SECONDS = 600
@@ -43,6 +45,7 @@ async def lifespan(app: FastAPI):
 
     app.state.token_store = TokenStore(settings.tokens_db_path, settings.session_secret)
     app.state.social_store = SocialStore(settings.tokens_db_path)
+    app.state.usage_store = UsageStore(settings.tokens_db_path)
     app.state.media_cache = MediaCache(settings.media_cache_dir, settings.media_cache_max_bytes)
 
     timeout = httpx.Timeout(30.0, read=120.0)
@@ -52,6 +55,20 @@ async def lifespan(app: FastAPI):
         timeout=timeout,
         follow_redirects=True,
     )
+
+    # Cloudflare Access sign-in. Its own client: the Immich key must never go to Cloudflare.
+    app.state.cf_client = None
+    app.state.cf_verifier = None
+    if settings.cf_access_team_domain and settings.cf_access_aud:
+        app.state.cf_client = httpx.AsyncClient(timeout=httpx.Timeout(10.0))
+
+        async def fetch_json(url: str):
+            response = await app.state.cf_client.get(url)
+            response.raise_for_status()
+            return response.json()
+
+        app.state.cf_verifier = AccessVerifier(settings.cf_access_team_domain, settings.cf_access_aud, fetch_json)
+        print(f"Cloudflare Access sign-in on ({app.state.cf_verifier.team_domain})")
 
     try:
         response = await app.state.http_client.get("/api/server/ping")
@@ -70,6 +87,8 @@ async def lifespan(app: FastAPI):
     with suppress(asyncio.CancelledError):
         await cleanup_task
     await app.state.http_client.aclose()
+    if app.state.cf_client is not None:
+        await app.state.cf_client.aclose()
 
 
 app = FastAPI(
@@ -102,6 +121,7 @@ if settings.social_enabled:
     app.include_router(activity.router)
 app.include_router(timeline.router)
 app.include_router(map.router)
+app.include_router(presence.router)
 
 if (STATIC_DIR / "css").is_dir():
     app.mount("/css", StaticFiles(directory=str(STATIC_DIR / "css")), name="css")

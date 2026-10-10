@@ -48,6 +48,16 @@
         </div>
 
         <div class="header-actions">
+          <div class="presence" id="presence" hidden>
+            <button type="button" class="presence-button" id="presence-button" aria-expanded="false" aria-controls="presence-popover" aria-label="Who's here">
+              <span class="presence-faces" id="presence-faces"></span>
+            </button>
+            <div class="presence-popover" id="presence-popover" hidden>
+              <h3 class="presence-title">Here now</h3>
+              <div class="presence-list" id="presence-list"></div>
+              <a class="presence-usage" id="presence-usage" href="/usage" hidden>Who's been on &rarr;</a>
+            </div>
+          </div>
           <div class="view-control" role="group" aria-label="Thumbnail size">
             <button type="button" class="view-btn" data-view="dense" aria-label="Dense grid" title="Dense">
               <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -301,6 +311,7 @@
               <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
           </button>
+          <div class="lightbox-presence" id="lightbox-presence" hidden></div>
           <div class="lightbox-toolbar-spacer"></div>
           <button class="lightbox-tool lightbox-zoom-chip" id="lightbox-zoom-toggle" aria-label="Zoom to 100%" hidden>
             <span class="zoom-chip-label">Fit</span>
@@ -406,6 +417,7 @@
   <script src="js/people.js"></script>
   <script src="js/scrubber.js"></script>
   <script src="js/places.js"></script>
+  <script src="js/presence.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

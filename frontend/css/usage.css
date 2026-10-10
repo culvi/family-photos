@@ -1,0 +1,135 @@
+/* The owner's Usage page */
+.usage-body {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+.usage {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: calc(1.25rem + env(safe-area-inset-top, 0px)) 1rem calc(2rem + env(safe-area-inset-bottom, 0px));
+}
+.usage-back {
+  display: inline-block;
+  margin-bottom: 0.75rem;
+  color: var(--color-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+.usage-header h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+.usage-sub {
+  margin-top: 0.25rem;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+.usage-people {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 1.25rem;
+}
+.usage-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+.usage-card.is-here {
+  border-color: #22c55e;
+  box-shadow: 0 0 0 1px #22c55e inset;
+}
+.usage-card h3 {
+  font-size: 1rem;
+  font-weight: 600;
+}
+.usage-status {
+  margin-top: 0.1rem;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+.usage-card.is-here .usage-status {
+  color: #16a34a;
+  font-weight: 600;
+}
+.usage-card.is-never .usage-status {
+  color: #dc2626;
+}
+.usage-stats {
+  display: flex;
+  gap: 0.9rem;
+  text-align: center;
+}
+.usage-stats dd {
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.usage-stats dt {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+.usage-recent {
+  margin-top: 2rem;
+}
+.usage-recent h2 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+.usage-feed {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.usage-event {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.usage-event .presence-face {
+  width: 2rem;
+  height: 2rem;
+  font-size: 0.85rem;
+}
+.usage-event p {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.9rem;
+}
+.usage-event p span {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+.usage-thumb {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--color-surface-2);
+}
+.usage-empty {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 480px) {
+  .usage-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .usage-stats {
+    grid-column: 1 / -1;
+    justify-content: space-around;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--color-border);
+  }
+}

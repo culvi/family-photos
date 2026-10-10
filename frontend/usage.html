@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Who's been on · Photos</title>
+  <link rel="icon" href="favicon-32.png" type="image/png">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/usage.css">
+  <script src="js/theme-init.js"></script>
+</head>
+<body class="usage-body">
+  <main class="usage">
+    <header class="usage-header">
+      <a class="usage-back" href="/" aria-label="Back to photos">&larr; Photos</a>
+      <h1>Who's been on</h1>
+      <p class="usage-sub" id="usage-sub">Last 30 days</p>
+    </header>
+
+    <section class="usage-people" id="usage-people" aria-label="Family members"></section>
+
+    <section class="usage-recent">
+      <h2>Recent activity</h2>
+      <ol class="usage-feed" id="usage-feed"></ol>
+      <p class="usage-empty" id="usage-empty" hidden>Nothing yet. Activity shows up here as people use the site.</p>
+    </section>
+  </main>
+  <script src="js/api.js"></script>
+  <script src="js/usage.js"></script>
+</body>
+</html>
