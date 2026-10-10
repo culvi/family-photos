@@ -464,8 +464,8 @@ const Filters = {
 
         const hasPeople = selectedIds.length > 0;
         this.elements.searchInput.placeholder = hasPeople
-            ? 'Add a person or search meaning…'
-            : 'Search meaning, or type a name to pick a person';
+            ? 'Add a person or search…'
+            : 'Search photos or people';
     },
 
     clearAll() {

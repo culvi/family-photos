@@ -1893,3 +1893,47 @@ html[data-view="large"] .gallery-item img {
     right: 6.5rem;
   }
 }
+
+/* ---- Header tidy-up ---- */
+.filter-badge[hidden],
+.status-bar[hidden] {
+  display: none;
+}
+
+.view-cycle {
+  display: none;
+}
+.view-cycle .icon {
+  display: none;
+  width: 1.15rem;
+  height: 1.15rem;
+}
+html[data-view="dense"] .view-cycle .vc-dense,
+html[data-view="comfortable"] .view-cycle .vc-comfortable,
+html[data-view="large"] .view-cycle .vc-large {
+  display: block;
+}
+
+@media (max-width: 720px) {
+  /* One button that cycles sizes (and pinch) instead of three */
+  .view-control {
+    display: none;
+  }
+  .view-cycle {
+    display: inline-flex;
+  }
+
+  /* Slides away while scrolling down, back on the way up */
+  .header {
+    transition: transform 0.25s ease;
+  }
+  .header.header-hidden {
+    transform: translateY(-100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header {
+    transition: none;
+  }
+}

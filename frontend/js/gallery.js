@@ -41,10 +41,6 @@ const Gallery = {
 
         this.setupInfiniteScroll();
 
-        document.querySelectorAll('.view-btn').forEach((btn) => {
-            btn.addEventListener('click', () => this.refreshImageSources());
-        });
-
         State.subscribe((newState, oldState) => {
             this.onStateChange(newState, oldState);
         });
@@ -78,6 +74,8 @@ const Gallery = {
 
         if (
             newState.total !== oldState.total ||
+            newState.isLoading !== oldState.isLoading ||
+            newState.jumpTo !== oldState.jumpTo ||
             newState.assets.length !== oldState.assets.length
         ) {
             this.updateResultCount(newState);
@@ -245,7 +243,7 @@ const Gallery = {
         let grid = null;
 
         assets.forEach((asset, index) => {
-            const key = this.dayKey(asset.localDateTime || asset.fileCreatedAt);
+            const key = this.groupKey(asset.localDateTime || asset.fileCreatedAt);
             if (key !== currentKey) {
                 currentKey = key;
                 const group = document.createElement('section');
@@ -254,7 +252,7 @@ const Gallery = {
 
                 const header = document.createElement('h2');
                 header.className = 'day-header';
-                header.textContent = this.dayLabel(asset.localDateTime || asset.fileCreatedAt);
+                header.textContent = this.groupLabel(asset.localDateTime || asset.fileCreatedAt);
                 group.appendChild(header);
 
                 grid = document.createElement('div');
@@ -278,12 +276,12 @@ const Gallery = {
         if (grid) {
             const lastAsset = State.getProperty('assets')[currentLength - 1];
             currentKey = lastAsset
-                ? this.dayKey(lastAsset.localDateTime || lastAsset.fileCreatedAt)
+                ? this.groupKey(lastAsset.localDateTime || lastAsset.fileCreatedAt)
                 : null;
         }
 
         assets.forEach((asset, index) => {
-            const key = this.dayKey(asset.localDateTime || asset.fileCreatedAt);
+            const key = this.groupKey(asset.localDateTime || asset.fileCreatedAt);
             if (key !== currentKey || !grid) {
                 currentKey = key;
                 const group = document.createElement('section');
@@ -292,7 +290,7 @@ const Gallery = {
 
                 const header = document.createElement('h2');
                 header.className = 'day-header';
-                header.textContent = this.dayLabel(asset.localDateTime || asset.fileCreatedAt);
+                header.textContent = this.groupLabel(asset.localDateTime || asset.fileCreatedAt);
                 group.appendChild(header);
 
                 grid = document.createElement('div');
@@ -304,6 +302,54 @@ const Gallery = {
         });
 
         this.elements.loadMoreContainer.hidden = !State.getProperty('hasMore');
+    },
+
+    /** The smallest size groups by month: a heading per day wastes a row on a few photos. */
+    isMonthView() {
+        return document.documentElement.dataset.view === 'dense';
+    },
+
+    groupKey(dateString) {
+        const key = this.dayKey(dateString);
+        return this.isMonthView() && key !== 'unknown' ? key.slice(0, 7) : key;
+    },
+
+    groupLabel(dateString) {
+        if (!this.isMonthView()) return this.dayLabel(dateString);
+        const d = new Date(dateString);
+        if (!dateString || Number.isNaN(d.getTime())) return 'Unknown';
+        return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    },
+
+    /** Size changed: swap image sizes, and regroup when switching to/from months. */
+    onViewModeChange(next, previous) {
+        this.refreshImageSources();
+        const monthsChanged = (next === 'dense') !== (previous === 'dense');
+        if (monthsChanged && State.getProperty('assets').length) this.render();
+    },
+
+    /** The photo at screen height `y` (default: the first one under the header). */
+    captureAnchor(y = null) {
+        const header = document.querySelector('.header');
+        const top = header ? Math.max(0, header.getBoundingClientRect().bottom) : 0;
+        let item = null;
+        if (y !== null) {
+            item = document.elementFromPoint(window.innerWidth / 2, y)?.closest?.('.gallery-item');
+        }
+        if (!item) {
+            item = [...document.querySelectorAll('.gallery-item')].find(
+                (el) => el.getBoundingClientRect().bottom > top + 1
+            );
+        }
+        if (!item) return null;
+        return { id: item.dataset.assetId, top: item.getBoundingClientRect().top };
+    },
+
+    restoreAnchor(anchor) {
+        if (!anchor) return;
+        const item = document.querySelector(`.gallery-item[data-asset-id="${CSS.escape(anchor.id)}"]`);
+        if (!item) return;
+        window.scrollBy(0, item.getBoundingClientRect().top - anchor.top);
     },
 
     dayKey(dateString) {
@@ -395,26 +441,28 @@ const Gallery = {
         }
     },
 
+    /** A real total when Immich's timeline counts cover this view (the whole library,
+     *  one person, optionally jumped back in time); otherwise nothing, since search
+     *  results come a page at a time with no total. */
     updateResultCount(state) {
-        const total = state.total;
-        const showing = state.assets.length;
-
-        if (showing === 0) {
-            this.elements.resultCount.textContent = 'No results';
-            return;
+        let text = '';
+        if (!state.isLoading && state.assets.length === 0) {
+            text = 'No results';
+        } else {
+            const total = window.Scrubber?.totalFor(state);
+            if (Number.isFinite(total) && total > 0) {
+                text = `${total.toLocaleString()} ${total === 1 ? 'photo' : 'photos & videos'}`;
+            }
         }
+        this.elements.resultCount.textContent = text;
+        this._syncStatusBar();
+    },
 
-        if (Number.isFinite(total) && total > 0 && showing < total) {
-            this.elements.resultCount.textContent = `Showing ${showing} of ${total} items`;
-            return;
-        }
-
-        if (state.hasMore) {
-            this.elements.resultCount.textContent = `Showing ${showing}+ items`;
-            return;
-        }
-
-        this.elements.resultCount.textContent = `${showing} items`;
+    /** Collapse the row under the header when it has nothing to say. */
+    _syncStatusBar() {
+        const bar = document.getElementById('status-bar');
+        if (!bar) return;
+        bar.hidden = !this.elements.resultCount.textContent && !this.elements.activeFilters.children.length;
     },
 
     updateActiveFilters(state) {
@@ -485,6 +533,7 @@ const Gallery = {
             tag.appendChild(button);
             container.appendChild(tag);
         });
+        this._syncStatusBar();
     },
 
     removeFilter(key, value) {

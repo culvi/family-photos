@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     cache_ttl_people: int = 300
     # People page "More faces": unnamed people who appear in at least this many photos.
     unnamed_min_photos: int = 5
+    # Comments, reactions and the activity feed. Off: the routes aren't registered at all.
+    social_enabled: bool = False
     cache_ttl_suggestions: int = 600
 
     # Previews and originals persist under ./data so they survive image rebuilds.

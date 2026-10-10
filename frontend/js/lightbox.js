@@ -167,10 +167,6 @@ const Lightbox = {
         this.updateNavigation();
         this.updateMetadata(asset);
 
-        if (window.Social) {
-            Social.loadForAsset(asset.id);
-        }
-
         if (!asset.exifInfo) {
             try {
                 const detailedAsset = await API.getAsset(asset.id);
@@ -205,10 +201,6 @@ const Lightbox = {
         this.resetZoom();
         this.currentAsset = null;
         this.currentIndex = -1;
-
-        if (window.Social) {
-            Social.clear();
-        }
 
         State.set({
             lightboxAssetId: null,

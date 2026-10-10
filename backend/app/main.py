@@ -97,8 +97,9 @@ app.include_router(access.router)
 app.include_router(people.router)
 app.include_router(search.router)
 app.include_router(assets.router)
-app.include_router(social.router)
-app.include_router(activity.router)
+if settings.social_enabled:
+    app.include_router(social.router)
+    app.include_router(activity.router)
 app.include_router(timeline.router)
 
 if (STATIC_DIR / "css").is_dir():

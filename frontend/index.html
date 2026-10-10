@@ -24,7 +24,7 @@
               type="text"
               id="search-input"
               class="search-input"
-              placeholder="Search meaning, or type a name to pick a person"
+              placeholder="Search photos or people"
               autocomplete="off"
               role="combobox"
               aria-autocomplete="list"
@@ -69,6 +69,21 @@
               </svg>
             </button>
           </div>
+          <button type="button" id="view-cycle" class="btn-icon view-cycle" aria-label="Change thumbnail size" title="Thumbnail size">
+            <svg class="icon vc-dense" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <rect x="3" y="3" width="4" height="4" rx="0.5"/><rect x="10" y="3" width="4" height="4" rx="0.5"/><rect x="17" y="3" width="4" height="4" rx="0.5"/>
+              <rect x="3" y="10" width="4" height="4" rx="0.5"/><rect x="10" y="10" width="4" height="4" rx="0.5"/><rect x="17" y="10" width="4" height="4" rx="0.5"/>
+              <rect x="3" y="17" width="4" height="4" rx="0.5"/><rect x="10" y="17" width="4" height="4" rx="0.5"/><rect x="17" y="17" width="4" height="4" rx="0.5"/>
+            </svg>
+            <svg class="icon vc-comfortable" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/>
+              <rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/>
+            </svg>
+            <svg class="icon vc-large" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="11" rx="1.5"/>
+              <rect x="3" y="16" width="8" height="5" rx="1"/><rect x="13" y="16" width="8" height="5" rx="1"/>
+            </svg>
+          </button>
           <button id="people-toggle" class="btn-icon" aria-label="People" aria-expanded="false" aria-controls="people-page" title="People">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
@@ -77,26 +92,11 @@
               <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
             </svg>
           </button>
-          <button id="activity-toggle" class="btn-icon" aria-label="Activity" aria-expanded="false" title="Activity">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <polyline points="12 6 12 12 16 14"></polyline>
-            </svg>
-          </button>
           <button id="filter-toggle" class="btn-icon" aria-label="Filters">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
             </svg>
             <span class="filter-badge" id="filter-badge" hidden>0</span>
-          </button>
-          <button id="theme-toggle" class="btn-icon" aria-label="Toggle theme">
-            <svg class="icon icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="5"></circle>
-              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path>
-            </svg>
-            <svg class="icon icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-            </svg>
           </button>
         </div>
       </div>
@@ -176,32 +176,6 @@
         </div>
 
         <button id="apply-filters" class="btn btn-primary btn-full">Apply Filters</button>
-      </div>
-    </aside>
-
-    <aside class="activity-panel" id="activity-panel" hidden role="dialog" aria-modal="true" aria-labelledby="activity-panel-title">
-      <div class="panel-header">
-        <h2 id="activity-panel-title">Activity</h2>
-        <button type="button" class="btn-icon panel-close" id="activity-close" aria-label="Close activity">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
-      </div>
-      <div class="activity-panel-content">
-        <div class="activity-loading" id="activity-loading" hidden>
-          <div class="spinner spinner-small"></div>
-          <span>Loading activity...</span>
-        </div>
-        <div class="activity-empty" id="activity-empty" hidden>
-          <p>No comments, reactions, or uploads yet</p>
-        </div>
-        <div class="activity-error" id="activity-error" hidden>
-          <p>Could not load activity</p>
-          <button type="button" class="btn btn-secondary" id="activity-retry">Retry</button>
-        </div>
-        <div class="activity-list" id="activity-list" hidden></div>
       </div>
     </aside>
 
@@ -383,54 +357,6 @@
             <p id="meta-filesize" class="metadata-value metadata-secondary">-</p>
             <button type="button" class="metadata-link" id="meta-download-original" hidden>Download original</button>
           </div>
-
-          <div class="metadata-section social-section" id="social-section">
-            <h3 class="metadata-title">You</h3>
-            <p class="social-identity-line">
-              Commenting as <strong id="social-identity-name">Guest</strong>
-              <button type="button" class="btn-text social-identity-clear" id="social-identity-clear">Reset</button>
-            </p>
-            <div class="social-identity-picker">
-              <label for="social-identity-search" class="visually-hidden">Choose name or person</label>
-              <input
-                type="search"
-                id="social-identity-search"
-                class="input social-input"
-                placeholder="Match a person or type a name"
-                autocomplete="off"
-              >
-              <div class="social-identity-results" id="social-identity-results" hidden></div>
-            </div>
-
-            <h3 class="metadata-title social-subtitle">Reactions</h3>
-            <div class="social-reactions-row">
-              <div class="social-reactions" id="social-reactions"></div>
-              <button type="button" class="social-add-reaction" id="social-add-reaction" title="Add emoji from your emoji keyboard" aria-label="Add reaction">+</button>
-              <input
-                type="text"
-                id="social-emoji-input"
-                class="social-emoji-input"
-                maxlength="8"
-                inputmode="text"
-                autocomplete="off"
-                aria-label="Emoji from system keyboard"
-              >
-            </div>
-            <p class="social-hint">Use your emoji keyboard (⌘⌃Space or the emoji key). Apple emoji on Apple devices.</p>
-
-            <h3 class="metadata-title social-subtitle">Comments</h3>
-            <div class="social-comments" id="social-comments"></div>
-            <div class="social-comment-compose">
-              <textarea
-                id="social-comment-input"
-                class="input social-input social-comment-input"
-                rows="2"
-                maxlength="1000"
-                placeholder="Add a comment…"
-              ></textarea>
-              <button type="button" class="btn btn-primary btn-full" id="social-comment-submit">Post</button>
-            </div>
-          </div>
         </div>
       </aside>
     </div>
@@ -442,8 +368,6 @@
   <script src="js/gallery.js"></script>
   <script src="js/original-image.js"></script>
   <script src="js/lightbox.js"></script>
-  <script src="js/social.js"></script>
-  <script src="js/activity.js"></script>
   <script src="js/filters.js"></script>
   <script src="js/people.js"></script>
   <script src="js/scrubber.js"></script>

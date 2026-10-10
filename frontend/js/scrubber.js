@@ -20,6 +20,7 @@ const Scrubber = {
     },
 
     buckets: [], // [{month, count}], newest first
+    _bucketsKey: null, // which view `buckets` belongs to
     layout: [], // [{month, top, height}] as fractions of the rail
     _key: null, // which buckets are loaded: 'all', a person id, or null (hidden)
     _dragging: false,
@@ -94,6 +95,7 @@ const Scrubber = {
         this._key = key;
         if (!key) {
             this.hide();
+            Gallery.updateResultCount(State.get());
             return;
         }
 
@@ -107,12 +109,23 @@ const Scrubber = {
         if (this._key !== key) return; // a newer refresh won
 
         this.buckets = buckets;
+        this._bucketsKey = key;
+        Gallery.updateResultCount(State.get());
         if (buckets.length < 2) {
             this.hide(); // a single month has nothing to scrub
             return;
         }
         this._computeLayout();
         this.show();
+    },
+
+    /** Photos in the current view per Immich's counts, or null when they don't apply. */
+    totalFor(state) {
+        const key = this.eligibleKey(state);
+        if (!key || key !== this._bucketsKey) return null;
+        return this.buckets
+            .filter((b) => !state.jumpTo || b.month <= state.jumpTo)
+            .reduce((sum, b) => sum + b.count, 0);
     },
 
     show() {
@@ -147,7 +160,8 @@ const Scrubber = {
     /** Start the rail just below the header (its height differs between phone and desktop). */
     _placeRail() {
         const header = document.querySelector('.header');
-        const bottom = header ? Math.max(0, header.getBoundingClientRect().bottom) : 0;
+        // offsetHeight, not the on-screen position: the header slides away while scrolling.
+        const bottom = header ? header.offsetHeight : 0;
         this.el.rail.style.setProperty('--scrubber-top', `${Math.round(bottom + 8)}px`);
     },
 
