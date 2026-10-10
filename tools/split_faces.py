@@ -51,9 +51,27 @@ def main(argv=None):
     ap.add_argument("csv")
     ap.add_argument("--a", required=True, help="person group id now holding both (keeps the real A)")
     ap.add_argument("--b", required=True, help="person group id to move B's faces to")
-    ap.add_argument("--since", required=True, help="YYYY-MM-DD: A's faces before this are trusted as A")
+    ap.add_argument("--since", required=True, help="YYYY-MM-DD: sort A's faces from this date on")
+    ap.add_argument(
+        "--trust-a-before",
+        default="",
+        help="YYYY-MM-DD: also treat A's faces before this as truly A (omit when A's childhood looks like B now)",
+    )
+    ap.add_argument(
+        "--window-years",
+        type=float,
+        default=2.0,
+        help="compare each face only with faces taken within this many years of it (faces change with age)",
+    )
     ap.add_argument("--seed-a", default="", help="asset ids where A's tagged face really is A")
     ap.add_argument("--seed-b", default="", help="asset ids where A's tagged face is really B")
+    ap.add_argument("--neighbours", type=int, default=8, help="links per face in the similarity graph")
+    ap.add_argument(
+        "--confidence",
+        type=float,
+        default=0.3,
+        help="how one-sided the evidence must be to decide (0..1); below this the face stays A",
+    )
     ap.add_argument("--out", default="split")
     args = ap.parse_args(argv)
 
@@ -73,12 +91,17 @@ def main(argv=None):
     for i in range(n):
         if group[i] == args.b:
             label[i], fixed[i] = "B", True
-        elif taken[i] < args.since:
+        elif args.trust_a_before and taken[i] < args.trust_a_before:
             label[i], fixed[i] = "A", True
-        else:
+        elif taken[i] >= args.since:
             open_idx.append(i)
+        # else: A's earlier faces, neither trusted nor sorted: ignored
 
     sims_all = emb @ emb.T
+    # Faces only vouch for faces from around the same age.
+    years = np.array([int(t[:4]) + (int(t[5:7]) - 1) / 12 for t in taken])
+    near = np.abs(years[:, None] - years[None, :]) <= args.window_years
+    sims_all = np.where(near, sims_all, -1.0)
 
     # Seeds: in each checked photo, the A-tagged face (the most fitting one if there are two).
     by_asset = defaultdict(list)
@@ -96,29 +119,50 @@ def main(argv=None):
             label[best], fixed[best] = side, True
             open_idx = [i for i in open_idx if i != best]
 
-    # Label in rounds, most confident first.
-    while open_idx:
-        a_ref = [j for j in range(n) if label[j] == "A"]
-        b_ref = [j for j in range(n) if label[j] == "B"]
-        sub = sims_all[open_idx]
-        sa = topk_mean(sub[:, a_ref])
-        sb = topk_mean(sub[:, b_ref])
-        margin = sb - sa
-        confident = [
-            (abs(m), k)
-            for k, m in enumerate(margin)
-            if abs(m) >= MIN_MARGIN and max(sa[k], sb[k]) >= MIN_SIM
-        ]
-        if not confident:
-            break
-        confident.sort(reverse=True)
-        take = confident[: max(1, int(len(open_idx) * BATCH))]
-        chosen = set()
-        for _, k in take:
-            i = open_idx[k]
-            label[i] = "B" if margin[k] > 0 else "A"
-            chosen.add(i)
-        open_idx = [i for i in open_idx if i not in chosen]
+    # Spread the known labels through a "most similar faces" graph. Each face links to
+    # its closest faces from around the same time; labels flow from the checked and
+    # tagged faces along those links until they settle. Look-alikes of the same age
+    # stay apart because each person's own photos link to each other more strongly.
+    nodes = [i for i in range(n) if label[i] is not None or i in set(open_idx)]
+    pos = {i: k for k, i in enumerate(nodes)}
+    S = sims_all[np.ix_(nodes, nodes)].copy()
+    np.fill_diagonal(S, -1.0)
+    m = len(nodes)
+    k_nn = min(args.neighbours, m - 1)
+    W = np.zeros((m, m), dtype=np.float32)
+    nn = np.argpartition(-S, k_nn, axis=1)[:, :k_nn]
+    rows_idx = np.repeat(np.arange(m), k_nn)
+    vals = S[rows_idx, nn.ravel()]
+    W[rows_idx, nn.ravel()] = np.where(vals > 0, np.exp((vals - 1.0) / 0.1), 0.0)
+    W = np.maximum(W, W.T)
+    deg = W.sum(axis=1, keepdims=True) + 1e-9
+    P = W / deg
+
+    F = np.zeros((m, 2), dtype=np.float32)  # columns: A, B
+    clamp = np.array([label[i] is not None for i in nodes])
+    for i in nodes:
+        if label[i] == "A":
+            F[pos[i], 0] = 1
+        elif label[i] == "B":
+            F[pos[i], 1] = 1
+    Y = F.copy()
+    for _ in range(300):
+        F = P @ F
+        F[clamp] = Y[clamp]
+
+    sure_b = {}
+    for i in open_idx:
+        fa, fb = F[pos[i]]
+        total = fa + fb
+        if total < 1e-6:
+            continue  # cut off from every example
+        share_b = fb / total
+        sure_b[i] = float(share_b)
+        if share_b >= 0.5 + args.confidence / 2:
+            label[i] = "B"
+        elif share_b <= 0.5 - args.confidence / 2:
+            label[i] = "A"
+    open_idx = [i for i in open_idx if label[i] is None]
 
     for i in open_idx:
         label[i] = "unsure"
@@ -132,18 +176,13 @@ def main(argv=None):
             lean_b = max(as_a, key=lambda i: topk_mean(sims_all[[i]][:, b_ref])[0] - topk_mean(sims_all[[i]][:, a_ref])[0])
             label[lean_b] = "B"
 
-    # Final scores for the report
-    a_ref = [j for j in range(n) if label[j] == "A"]
-    b_ref = [j for j in range(n) if label[j] == "B"]
+    # How sure, for the report: share of the evidence pointing to B (1 = certainly B).
     plan = []
     for i in range(n):
         if group[i] != args.a or taken[i] < args.since:
             continue
-        others_a = [j for j in a_ref if j != i]
-        others_b = [j for j in b_ref if j != i]
-        sa = float(topk_mean(sims_all[[i]][:, others_a])[0])
-        sb = float(topk_mean(sims_all[[i]][:, others_b])[0])
-        plan.append((ids[i], asset[i], taken[i], label[i], round(sa, 3), round(sb, 3), round(sb - sa, 3)))
+        b_share = sure_b.get(i, 1.0 if label[i] == "B" else 0.0 if label[i] == "A" else 0.5)
+        plan.append((ids[i], asset[i], taken[i], label[i], round(1 - b_share, 3), round(b_share, 3), round(b_share - 0.5, 3)))
 
     moves = [p for p in plan if p[3] == "B"]
     stays = [p for p in plan if p[3] == "A"]
@@ -151,7 +190,7 @@ def main(argv=None):
 
     with open(f"{args.out}-plan.csv", "w", newline="") as handle:
         w = csv.writer(handle)
-        w.writerow(["face_id", "asset_id", "taken", "decision", "like_a", "like_b", "margin"])
+        w.writerow(["face_id", "asset_id", "taken", "decision", "toward_a", "toward_b", "lean"])
         w.writerows(sorted(plan, key=lambda p: p[2]))
 
     face_list = ",".join(f"'{p[0]}'" for p in moves) or "NULL"
@@ -186,12 +225,12 @@ def main(argv=None):
     def links(items, title):
         print(f"\n{title}")
         for p in items:
-            print(f"  {p[2]}  margin {p[6]:+.3f}  https://neville.photos/photos/{p[1]}")
+            print(f"  {p[2]}  {round(p[5] * 100):3d}% like B  https://neville.photos/photos/{p[1]}")
 
-    links(sorted(moves, key=lambda p: p[6])[:8], "Closest calls moving to B (check these):")
-    links(sorted(stays, key=lambda p: -p[6])[:8], "Closest calls staying A (check these):")
+    links(sorted(moves, key=lambda p: p[5])[:8], "Closest calls moving to B (check these):")
+    links(sorted(stays, key=lambda p: -p[5])[:8], "Closest calls staying A (check these):")
     if unsure:
-        links(sorted(unsure, key=lambda p: -abs(p[6]))[:6], "Unsure (left as A):")
+        links(sorted(unsure, key=lambda p: -abs(p[6]))[:8], "Unsure (left as A, fix by hand if wanted):")
     print(f"\nWrote {args.out}-plan.csv, {args.out}-apply.sql, {args.out}-undo.sql")
 
 
