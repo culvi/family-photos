@@ -1703,3 +1703,29 @@ html[data-view="large"] .gallery-item img {
     min-width: 0;
   }
 }
+
+/* "More faces": most-seen unnamed people, below the named grid */
+.people-more {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.people-more[hidden] {
+  display: none !important;
+}
+
+.people-more-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.people-more-note {
+  margin: 0.2rem 0 1.25rem;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
+.person-tile-unnamed img {
+  max-width: 6rem;
+}

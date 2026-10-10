@@ -531,6 +531,8 @@ const Filters = {
             );
 
             this.peopleList = people;
+            // Most-seen unnamed faces, for the People page's "More faces" section.
+            this.unnamedPeople = response.unnamed || [];
             State.set({ people });
             this.renderPeopleChips();
             this.renderSearchPersonChips();

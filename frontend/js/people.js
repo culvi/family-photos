@@ -14,6 +14,8 @@ const People = {
         grid: null,
         empty: null,
         count: null,
+        more: null,
+        moreGrid: null,
     },
 
     isOpen: false,
@@ -31,6 +33,8 @@ const People = {
         this.elements.grid = document.getElementById('people-grid');
         this.elements.empty = document.getElementById('people-empty');
         this.elements.count = document.getElementById('people-count');
+        this.elements.more = document.getElementById('people-more');
+        this.elements.moreGrid = document.getElementById('people-more-grid');
         if (!this.elements.page) return;
 
         this.elements.toggle?.addEventListener('click', () => this.open());
@@ -112,37 +116,50 @@ const People = {
         }
 
         const fragment = document.createDocumentFragment();
-        people.forEach((person) => {
-            const name = person.name.trim();
-            const tile = document.createElement('button');
-            tile.type = 'button';
-            tile.className = 'person-tile';
-            tile.setAttribute('aria-label', `Show photos of ${name}`);
-            if (selected.has(person.id)) tile.setAttribute('aria-current', 'true');
-
-            const img = document.createElement('img');
-            img.src = API.getPersonThumbnailUrl(person.id);
-            img.alt = '';
-            img.loading = 'lazy';
-            img.decoding = 'async';
-            tile.appendChild(img);
-
-            const label = document.createElement('span');
-            label.className = 'person-tile-name';
-            label.textContent = name;
-            tile.appendChild(label);
-
-            tile.addEventListener('click', () => this.select(person.id));
-            fragment.appendChild(tile);
-        });
-
+        people.forEach((person) => fragment.appendChild(this._tile(person, selected)));
         grid.replaceChildren(fragment);
+
+        // Unnamed faces can't match a name search, so the section only shows when browsing.
+        const unnamed = query ? [] : Filters.unnamedPeople || [];
+        if (this.elements.moreGrid) {
+            const moreFragment = document.createDocumentFragment();
+            unnamed.forEach((person) => moreFragment.appendChild(this._tile(person, selected)));
+            this.elements.moreGrid.replaceChildren(moreFragment);
+        }
+        if (this.elements.more) this.elements.more.hidden = unnamed.length === 0;
+
         if (empty) {
-            empty.hidden = people.length > 0;
+            empty.hidden = people.length > 0 || (!query && unnamed.length > 0);
             empty.textContent = all.length
                 ? 'No one matches that name.'
                 : 'No named people yet.';
         }
+    },
+
+    _tile(person, selected) {
+        const name = person.name?.trim() || '';
+        const tile = document.createElement('button');
+        tile.type = 'button';
+        tile.className = name ? 'person-tile' : 'person-tile person-tile-unnamed';
+        tile.setAttribute('aria-label', name ? `Show photos of ${name}` : 'Show photos of this person');
+        if (selected.has(person.id)) tile.setAttribute('aria-current', 'true');
+
+        const img = document.createElement('img');
+        img.src = API.getPersonThumbnailUrl(person.id);
+        img.alt = '';
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        tile.appendChild(img);
+
+        if (name) {
+            const label = document.createElement('span');
+            label.className = 'person-tile-name';
+            label.textContent = name;
+            tile.appendChild(label);
+        }
+
+        tile.addEventListener('click', () => this.select(person.id));
+        return tile;
     },
 };
 

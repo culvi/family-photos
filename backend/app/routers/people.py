@@ -1,4 +1,4 @@
-"""Immich server info and named-people reference data."""
+"""Immich server info, named people, and the most-seen unnamed faces."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..auth import require_token
 from ..memory_cache import cache_manager
+from ..people_lists import split_people
 from ..config import settings
 from ..deps import get_client, get_media_cache, validate_uuid
 from ..media_cache import MediaCache, as_response, person_thumb_key
@@ -58,11 +59,8 @@ async def get_people(
         response.raise_for_status()
         data = response.json()
         people = data.get("people", data) if isinstance(data, dict) else data
-        named_people = [p for p in people if p.get("name")]
-        if allowed is not None:
-            named_people = [p for p in named_people if p.get("id") in allowed]
-        named_people.sort(key=lambda x: x.get("name", "").lower())
-        result = {"people": named_people, "total": len(named_people)}
+        named_people, unnamed_people = split_people(people, allowed)
+        result = {"people": named_people, "total": len(named_people), "unnamed": unnamed_people}
         cache_manager.set(cache_key, result, ttl=settings.cache_ttl_people)
         return result
     except httpx.HTTPStatusError as e:
