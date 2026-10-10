@@ -247,28 +247,46 @@ const Lightbox = {
         }
     },
 
+    /** Where the open photo sits in the list now (newer photos may have been prepended). */
+    _indexNow() {
+        const id = this.currentAsset?.id;
+        const index = id ? State.getProperty('assets').findIndex((a) => a.id === id) : -1;
+        return index >= 0 ? index : this.currentIndex;
+    },
+
     async previous() {
-        if (this.currentIndex <= 0) return;
-        const assets = State.getProperty('assets');
-        const prevAsset = assets[this.currentIndex - 1];
+        if (this.currentIndex < 0) return;
+        let index = this._indexNow();
+        if (index <= 0) {
+            // At the top of a list that started at a scrubber jump: fetch the newer photos.
+            if (!State.getProperty('hasNewer')) return;
+            const id = this.currentAsset?.id;
+            await Gallery.loadNewer();
+            if (this.currentAsset?.id !== id) return;
+            index = this._indexNow();
+            if (index <= 0) return;
+        }
+        const prevAsset = State.getProperty('assets')[index - 1];
         if (prevAsset) {
-            await this.open(prevAsset, this.currentIndex - 1);
+            await this.open(prevAsset, index - 1);
         }
     },
 
     async next() {
         if (this.currentIndex < 0) return;
         let assets = State.getProperty('assets');
+        let index = this._indexNow();
 
-        if (this.currentIndex >= assets.length - 1) {
+        if (index >= assets.length - 1) {
             if (!State.getProperty('hasMore')) return;
             await Gallery.loadMore();
             assets = State.getProperty('assets');
+            index = this._indexNow();
         }
 
-        const nextAsset = assets[this.currentIndex + 1];
+        const nextAsset = assets[index + 1];
         if (nextAsset) {
-            await this.open(nextAsset, this.currentIndex + 1);
+            await this.open(nextAsset, index + 1);
             return;
         }
         this.updateNavigation();
@@ -783,19 +801,20 @@ const Lightbox = {
     updateNavigation() {
         const assets = State.getProperty('assets');
         const detached = this.currentIndex < 0;
+        const index = this._indexNow();
 
-        this.elements.prev.disabled = detached || this.currentIndex <= 0;
+        this.elements.prev.disabled = detached || (index <= 0 && !State.getProperty('hasNewer'));
         this.elements.prev.style.opacity = this.elements.prev.disabled ? '0.3' : '1';
 
         this.elements.next.disabled =
-            detached || (this.currentIndex >= assets.length - 1 && !State.getProperty('hasMore'));
+            detached || (index >= assets.length - 1 && !State.getProperty('hasMore'));
         this.elements.next.style.opacity = this.elements.next.disabled ? '0.3' : '1';
     },
 
     updateMetadata(asset) {
         const datetime = asset.localDateTime || asset.fileCreatedAt;
         document.getElementById('meta-datetime').textContent = datetime
-            ? new Date(datetime).toLocaleString()
+            ? new Date(datetime).toLocaleString(undefined, { timeZone: 'UTC' }) // wall-clock time
             : '-';
 
         const exif = asset.exifInfo || {};

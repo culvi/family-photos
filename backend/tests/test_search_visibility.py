@@ -64,3 +64,21 @@ async def test_asset_listing_only_returns_timeline_photos(viewer):
     response = await client.get("/api/assets")
     assert response.status_code == 200
     assert sent[-1][1]["visibility"] == "timeline"
+
+
+async def test_oldest_first_is_passed_to_metadata_search_only(viewer):
+    client, sent = viewer
+    await client.post("/api/search", json={"order": "asc", "takenAfter": "2012-03-31T23:59:59.999Z"})
+    assert sent[-1][0] == "/api/search/metadata"
+    assert sent[-1][1]["order"] == "asc"
+    assert sent[-1][1]["visibility"] == "timeline"
+
+    await client.post("/api/search", json={"order": "asc", "query": "beach"})
+    assert sent[-1][0] == "/api/search/smart"
+    assert "order" not in sent[-1][1]
+
+
+async def test_order_must_be_asc_or_desc(viewer):
+    client, sent = viewer
+    response = await client.post("/api/search", json={"order": "random"})
+    assert response.status_code == 422

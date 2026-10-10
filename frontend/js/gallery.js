@@ -40,6 +40,7 @@ const Gallery = {
         this.elements.retryBtn?.addEventListener('click', () => this.reload());
 
         this.setupInfiniteScroll();
+        this.setupNewerLoading();
 
         State.subscribe((newState, oldState) => {
             this.onStateChange(newState, oldState);
@@ -58,12 +59,99 @@ const Gallery = {
                     this.loadMore();
                 }
             },
-            { rootMargin: '200px' },
+            { rootMargin: '0px 0px 1500px 0px' }, // start well before the end, so scrolling doesn't stall
         );
 
         if (this.elements.loadMoreContainer) {
             this.observer.observe(this.elements.loadMoreContainer);
         }
+    },
+
+    /** After a scrubber jump, scrolling near the top pages in the photos just newer. */
+    setupNewerLoading() {
+        const sentinel = document.getElementById('load-newer');
+        if (!sentinel) return;
+        new IntersectionObserver(
+            (entries) => {
+                if (entries[0].isIntersecting) this.loadNewer();
+            },
+            { rootMargin: '1200px 0px 0px 0px' }
+        ).observe(sentinel);
+    },
+
+    async loadNewer() {
+        if (!State.getProperty('hasNewer') || State.getProperty('isLoadingNewer')) return;
+        if (State.getProperty('isLoading')) return;
+        State.set({ isLoadingNewer: true });
+        const indicator = document.getElementById('newer-indicator');
+        if (indicator) indicator.hidden = false;
+        const jumpTo = State.getProperty('jumpTo');
+
+        try {
+            const payload = State.buildNewerPayload();
+            const response = await API.search(payload);
+            if (State.getProperty('jumpTo') !== jumpTo) return; // the view changed meanwhile
+            const items = (response.items || []).slice().reverse(); // oldest-first → newest-first
+            const assets = [...items, ...State.getProperty('assets')];
+            State.set({
+                assets,
+                newerPage: payload.page,
+                hasNewer: response.hasMore !== false && (response.items || []).length >= payload.size,
+            });
+            if (items.length) this.prependItems(items);
+        } catch (error) {
+            console.error('Failed to load newer photos:', error);
+        } finally {
+            State.set({ isLoadingNewer: false });
+            if (indicator) indicator.hidden = true;
+        }
+        // Still near the top (a short page): keep going.
+        const sentinel = document.getElementById('load-newer');
+        if (State.getProperty('hasNewer') && sentinel && sentinel.getBoundingClientRect().bottom > -1200) {
+            requestAnimationFrame(() => this.loadNewer());
+        }
+    },
+
+    /** Insert newer photos above, merging into the top day group, without moving the screen. */
+    prependItems(items) {
+        const anchor = this.captureAnchor();
+        const gallery = this.elements.gallery;
+        const firstGroup = gallery.querySelector(':scope > .day-group');
+        const fragment = document.createDocumentFragment();
+        let currentKey = null;
+        let grid = null;
+
+        items.forEach((asset) => {
+            const key = this.groupKey(asset.localDateTime || asset.fileCreatedAt);
+            if (key !== currentKey) {
+                currentKey = key;
+                const group = document.createElement('section');
+                group.className = 'day-group';
+                group.dataset.day = key;
+                const header = document.createElement('h2');
+                header.className = 'day-header';
+                header.textContent = this.groupLabel(asset.localDateTime || asset.fileCreatedAt);
+                group.appendChild(header);
+                grid = document.createElement('div');
+                grid.className = 'gallery';
+                group.appendChild(grid);
+                fragment.appendChild(group);
+            }
+            grid.appendChild(this.createGalleryItem(asset));
+        });
+
+        // The last new group and the old first group may be the same day: join them.
+        const lastNew = fragment.lastElementChild;
+        if (firstGroup && lastNew && lastNew.dataset.day === firstGroup.dataset.day) {
+            const oldGrid = firstGroup.querySelector('.gallery');
+            const newTiles = [...lastNew.querySelector('.gallery').children];
+            oldGrid.prepend(...newTiles);
+            lastNew.remove();
+        }
+
+        if (firstGroup) gallery.insertBefore(fragment, firstGroup);
+        else gallery.appendChild(fragment);
+        this.restoreAnchor(anchor);
     },
 
     onStateChange(newState, oldState) {
@@ -75,7 +163,6 @@ const Gallery = {
         if (
             newState.total !== oldState.total ||
             newState.isLoading !== oldState.isLoading ||
-            newState.jumpTo !== oldState.jumpTo ||
             newState.assets.length !== oldState.assets.length
         ) {
             this.updateResultCount(newState);
@@ -180,10 +267,14 @@ const Gallery = {
                 page: response.page || 1,
                 hasMore: response.hasMore !== false,
                 isLoading: false,
+                newerPage: 0,
+                hasNewer: Boolean(State.getProperty('jumpTo')),
             });
 
             this.render();
             State.syncToURL();
+            // Jumped: the top of the list is right there, so start on the newer photos.
+            if (State.getProperty('hasNewer')) requestAnimationFrame(() => this.loadNewer());
         } catch (error) {
             console.error('Failed to load assets:', error);
             State.set({ isLoading: false, error: error.message });
@@ -260,7 +351,7 @@ const Gallery = {
                 group.appendChild(grid);
                 fragment.appendChild(group);
             }
-            grid.appendChild(this.createGalleryItem(asset, index));
+            grid.appendChild(this.createGalleryItem(asset));
         });
 
         this.elements.gallery.appendChild(fragment);
@@ -298,7 +389,7 @@ const Gallery = {
                 group.appendChild(grid);
                 this.elements.gallery.appendChild(group);
             }
-            grid.appendChild(this.createGalleryItem(asset, currentLength + index));
+            grid.appendChild(this.createGalleryItem(asset));
         });
 
         this.elements.loadMoreContainer.hidden = !State.getProperty('hasMore');
@@ -318,7 +409,7 @@ const Gallery = {
         if (!this.isMonthView()) return this.dayLabel(dateString);
         const d = new Date(dateString);
         if (!dateString || Number.isNaN(d.getTime())) return 'Unknown';
-        return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+        return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
     },
 
     /** Size changed: swap image sizes, and regroup when switching to/from months. */
@@ -356,7 +447,9 @@ const Gallery = {
         if (!dateString) return 'unknown';
         const d = new Date(dateString);
         if (Number.isNaN(d.getTime())) return 'unknown';
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        // localDateTime is the clock time where the photo was taken, written with a Z:
+        // read it as-is (UTC) rather than shifting it into this browser's time zone.
+        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
     },
 
     dayLabel(dateString) {
@@ -364,8 +457,8 @@ const Gallery = {
         try {
             const d = new Date(dateString);
             const now = new Date();
-            const opts = { weekday: 'long', month: 'long', day: 'numeric' };
-            if (d.getFullYear() !== now.getFullYear()) {
+            const opts = { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' };
+            if (d.getUTCFullYear() !== now.getFullYear()) {
                 opts.year = 'numeric';
             }
             return d.toLocaleDateString(undefined, opts);
@@ -374,13 +467,17 @@ const Gallery = {
         }
     },
 
-    createGalleryItem(asset, index) {
+    createGalleryItem(asset) {
+        // Look the index up when opened: newer photos can be prepended after this tile exists.
+        const open = () => {
+            const index = State.getProperty('assets').findIndex((a) => a.id === asset.id);
+            Lightbox.open(asset, index);
+        };
         const item = document.createElement('div');
         item.className = 'gallery-item';
         item.setAttribute('role', 'button');
         item.setAttribute('tabindex', '0');
         item.setAttribute('data-asset-id', asset.id);
-        item.setAttribute('data-index', index);
 
         const img = document.createElement('img');
         img.className = 'loading';
@@ -417,11 +514,11 @@ const Gallery = {
         overlay.textContent = this.formatDate(asset.localDateTime || asset.fileCreatedAt);
         item.appendChild(overlay);
 
-        item.addEventListener('click', () => Lightbox.open(asset, index));
+        item.addEventListener('click', open);
         item.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                Lightbox.open(asset, index);
+                open();
             }
         });
 
@@ -435,21 +532,22 @@ const Gallery = {
                 year: 'numeric',
                 month: 'short',
                 day: 'numeric',
+                timeZone: 'UTC',
             });
         } catch {
             return '';
         }
     },
 
-    /** A real total when Immich's timeline counts cover this view (the whole library,
-     *  one person, optionally jumped back in time); otherwise nothing, since search
-     *  results come a page at a time with no total. */
+    /** A real total when Immich's timeline counts cover this view (the whole library or
+     *  one person); otherwise nothing, since search results come a page at a time with
+     *  no total. */
     updateResultCount(state) {
         let text = '';
         if (!state.isLoading && state.assets.length === 0) {
             text = 'No results';
         } else {
-            const total = window.Scrubber?.totalFor(state);
+            const total = window.Scrubber?.totalFor(state); // the whole view: you can scroll both ways
             if (Number.isFinite(total) && total > 0) {
                 text = `${total.toLocaleString()} ${total === 1 ? 'photo' : 'photos & videos'}`;
             }
@@ -473,10 +571,6 @@ const Gallery = {
 
         if (state.query) {
             filters.push({ label: `"${state.query}"`, key: 'query' });
-        }
-
-        if (state.jumpTo) {
-            filters.push({ label: `${Scrubber.monthLabel(state.jumpTo)} and earlier`, key: 'jump' });
         }
 
         if (state.personIds.length > 0) {
@@ -575,10 +669,6 @@ const Gallery = {
             case 'city':
                 updates.city = '';
                 document.getElementById('location-city').value = '';
-                break;
-            case 'jump':
-                updates.jumpTo = null;
-                window.scrollTo({ top: 0 });
                 break;
         }
 

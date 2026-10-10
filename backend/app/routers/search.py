@@ -62,6 +62,8 @@ async def search_assets(
             endpoint = "/api/search/smart"
         else:
             endpoint = "/api/search/metadata"
+            if filters.order:
+                search_payload["order"] = filters.order  # smart search ranks by relevance
 
         response = await client.post(endpoint, json=search_payload)
         response.raise_for_status()

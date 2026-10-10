@@ -1,7 +1,7 @@
 /**
  * Timeline scrubber: a rail of years on the right edge. Drag (or tap, or use the arrow
- * keys) to pick a month; the gallery then shows photos from that month back in time, and
- * a "March 2012 and earlier" chip undoes it.
+ * keys) to pick a month; the gallery then starts at that month, and scrolling either way
+ * carries on: older photos page in below, newer ones above.
  *
  * Photos load page by page, so this jumps rather than mirroring scroll: the rail is laid
  * out from Immich's per-month counts (sqrt-weighted, so busy years get more room without
@@ -78,12 +78,9 @@ const Scrubber = {
     },
 
     onStateChange(newState, oldState) {
-        // Picking someone or searching starts fresh from the newest photos.
-        if (
-            newState.jumpTo &&
-            (newState.personIds !== oldState.personIds || newState.query !== oldState.query)
-        ) {
-            State.set({ jumpTo: null });
+        // Any change to what's being viewed starts fresh from the newest photos.
+        if (newState.jumpTo && this.eligibleKey(newState) !== this.eligibleKey(oldState)) {
+            State.set({ jumpTo: null, newerPage: 0, hasNewer: false });
             return;
         }
         if (this.eligibleKey(newState) !== this._key) this.refresh();
@@ -123,9 +120,7 @@ const Scrubber = {
     totalFor(state) {
         const key = this.eligibleKey(state);
         if (!key || key !== this._bucketsKey) return null;
-        return this.buckets
-            .filter((b) => !state.jumpTo || b.month <= state.jumpTo)
-            .reduce((sum, b) => sum + b.count, 0);
+        return this.buckets.reduce((sum, b) => sum + b.count, 0);
     },
 
     show() {

@@ -15,9 +15,13 @@ const State = {
         country: '',
         city: '',
 
-        // Scrubber jump: show photos from this month ("YYYY-MM") back. Not a user filter:
-        // not counted in the badge or written to the URL.
+        // Scrubber jump: start the list at this month ("YYYY-MM"). Older photos page in
+        // below as usual; newer ones page in above when scrolling up. Not a filter: no
+        // chip, not counted in the badge or written to the URL.
         jumpTo: null,
+        newerPage: 0,
+        hasNewer: false,
+        isLoadingNewer: false,
 
         // Pagination
         page: 1,
@@ -140,6 +144,8 @@ const State = {
             country: '',
             city: '',
             jumpTo: null,
+            newerPage: 0,
+            hasNewer: false,
             page: 1,
             assets: [],
             hasMore: true,
@@ -152,6 +158,19 @@ const State = {
         if (!month) return null;
         const [year, mon] = month.split('-').map(Number);
         return new Date(Date.UTC(year, mon, 0, 23, 59, 59, 999)).toISOString();
+    },
+
+    /** The next page of photos just newer than the jump point, oldest first. */
+    buildNewerPayload() {
+        const s = this._state;
+        return {
+            ...this.buildSearchPayload(false),
+            takenBefore: null,
+            takenAfter: this.endOfMonth(s.jumpTo),
+            order: 'asc',
+            page: s.newerPage + 1,
+            size: 100,
+        };
     },
 
     buildSearchPayload(loadMore = false) {

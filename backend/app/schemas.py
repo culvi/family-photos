@@ -21,6 +21,8 @@ class SearchFilters(BaseModel):
     takenAfter: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}")
     takenBefore: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}")
     type: Optional[str] = Field(None, pattern=r"^(IMAGE|VIDEO|ALL)$")
+    # Oldest-first lets the scrubber load the photos just newer than where it jumped to.
+    order: Optional[str] = Field(None, pattern=r"^(asc|desc)$")
     page: int = Field(1, ge=1, le=1000)
     size: int = Field(50, ge=1, le=100)
 
