@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     trusted_proxy_ips: Annotated[List[str], NoDecode] = []
 
     cache_ttl_people: int = 300
+    # People page "More faces": unnamed people who appear in at least this many photos.
+    unnamed_min_photos: int = 5
     cache_ttl_suggestions: int = 600
 
     # Previews and originals persist under ./data so they survive image rebuilds.
