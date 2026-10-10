@@ -187,7 +187,8 @@ video {
   max-width: 100%;
   padding: 0 1rem;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  /* minmax(0, …) lets the search column shrink instead of widening the page */
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 1rem;
 }
@@ -217,6 +218,7 @@ video {
   display: flex;
   align-items: center;
   position: relative;
+  min-width: 0;
   max-width: 42rem;
   width: 100%;
   margin: 0 auto;
@@ -1549,4 +1551,155 @@ html[data-view="large"] .gallery-item img {
 .lightbox-tool:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+/* ---- People page: full-screen grid of named people ---- */
+.people-page {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-sidebar) + 10);
+  background: var(--color-bg);
+  display: flex;
+  flex-direction: column;
+}
+
+.people-page[hidden] {
+  display: none !important;
+}
+
+.people-page-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+}
+
+.people-page-header h2 {
+  font-size: 1.375rem;
+  font-weight: 600;
+}
+
+.people-count {
+  margin-right: auto;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
+.people-page-search {
+  padding: 0 1.25rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.people-page-search input {
+  width: 100%;
+  max-width: 28rem;
+  height: 2.75rem;
+  padding: 0 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 16px; /* below 16px iOS zooms the page on focus */
+}
+
+.people-page-search input:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.people-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 1.5rem 1.25rem;
+  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+.people-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+  gap: 1.5rem 1rem;
+}
+
+.person-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.25rem;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.person-tile img {
+  width: 100%;
+  max-width: 7.5rem;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  object-fit: cover;
+  background: var(--color-surface-2);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.person-tile:hover img {
+  transform: scale(1.04);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+
+.person-tile:active img {
+  transform: scale(0.97);
+}
+
+.person-tile[aria-current="true"] img {
+  box-shadow: 0 0 0 3px var(--color-bg), 0 0 0 5px var(--color-primary);
+}
+
+.person-tile:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.person-tile-name {
+  max-width: 100%;
+  font-size: 0.9rem;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.people-empty {
+  padding: 3rem 0;
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 720px) {
+  .people-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.25rem 0.5rem;
+  }
+}
+
+/* Phones: the search row spans the header grid, and picking a person adds a chip that
+   made the grid size itself to the chip + input's min width, so the page grew wider
+   than the screen (498px on a 390px phone) and the theme toggle fell off. Let the row
+   shrink instead; the chips already scroll inside .search-field. */
+@media (max-width: 720px) {
+  .header-content {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .header-actions {
+    justify-self: end;
+  }
+  .search-container {
+    min-width: 0;
+  }
 }

@@ -69,6 +69,14 @@
               </svg>
             </button>
           </div>
+          <button id="people-toggle" class="btn-icon" aria-label="People" aria-expanded="false" aria-controls="people-page" title="People">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+          </button>
           <button id="activity-toggle" class="btn-icon" aria-label="Activity" aria-expanded="false" title="Activity">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="10"></circle>
@@ -243,6 +251,26 @@
       </div>
     </main>
 
+    <section class="people-page" id="people-page" role="dialog" aria-modal="true" aria-labelledby="people-title" hidden>
+      <div class="people-page-header">
+        <h2 id="people-title">People</h2>
+        <span class="people-count" id="people-count"></span>
+        <button type="button" class="btn-icon" id="people-close" aria-label="Close people">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="people-page-search">
+        <input type="search" id="people-page-search" placeholder="Find someone" autocomplete="off" enterkeyhint="search" aria-label="Find someone">
+      </div>
+      <div class="people-scroll">
+        <div class="people-grid" id="people-grid"></div>
+        <p class="people-empty" id="people-empty" hidden></p>
+      </div>
+    </section>
+
     <div class="lightbox" id="lightbox" hidden>
       <div class="lightbox-overlay" id="lightbox-overlay"></div>
       <div class="lightbox-content">
@@ -405,6 +433,7 @@
   <script src="js/social.js"></script>
   <script src="js/activity.js"></script>
   <script src="js/filters.js"></script>
+  <script src="js/people.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

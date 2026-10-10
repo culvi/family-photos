@@ -19,6 +19,7 @@ const App = {
         Social.init();
         Activity.init();
         Filters.init();
+        People.init();
 
         State.loadFromURL();
         await this.checkHealth();

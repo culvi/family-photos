@@ -401,6 +401,16 @@ const Filters = {
         this.elements.searchInput.focus();
     },
 
+    /** Show one person's photos (from the People page): replaces any current selection. */
+    showPerson(personId) {
+        this.elements.searchInput.value = '';
+        this.hidePersonSuggestions();
+        State.set({ personIds: [personId], query: '', page: 1, assets: [], hasMore: true });
+        this.updatePeopleChips([personId]);
+        Gallery.load();
+        window.scrollTo({ top: 0 });
+    },
+
     removeSearchPerson(personId) {
         const newIds = State.getProperty('personIds').filter((id) => id !== personId);
         State.set({ personIds: newIds, page: 1, assets: [], hasMore: true });
