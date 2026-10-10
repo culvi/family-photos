@@ -19,6 +19,7 @@ const App = {
         Lightbox.init();
         Filters.init();
         People.init();
+        Timeline.init();
         Scrubber.init();
 
         State.loadFromURL();

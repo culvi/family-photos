@@ -75,7 +75,6 @@ const Gallery = {
         if (
             newState.total !== oldState.total ||
             newState.isLoading !== oldState.isLoading ||
-            newState.jumpTo !== oldState.jumpTo ||
             newState.assets.length !== oldState.assets.length
         ) {
             this.updateResultCount(newState);
@@ -168,6 +167,17 @@ const Gallery = {
     async load() {
         State.set({ isLoading: true, error: null });
         this.showLoading();
+
+        // Date-ordered views (the library, one person) scroll as one continuous timeline.
+        if (await Timeline.load()) {
+            this.hideEmpty();
+            this.hideError();
+            this.elements.loadMoreContainer.hidden = true;
+            State.set({ assets: [], total: Timeline.total, page: 1, hasMore: false, isLoading: false });
+            this.updateResultCount(State.get());
+            State.syncToURL();
+            return;
+        }
 
         try {
             const payload = State.buildSearchPayload(false);
@@ -318,12 +328,16 @@ const Gallery = {
         if (!this.isMonthView()) return this.dayLabel(dateString);
         const d = new Date(dateString);
         if (!dateString || Number.isNaN(d.getTime())) return 'Unknown';
-        return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+        return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
     },
 
     /** Size changed: swap image sizes, and regroup when switching to/from months. */
     onViewModeChange(next, previous) {
         this.refreshImageSources();
+        if (Timeline.active) {
+            Timeline.relayout();
+            return;
+        }
         const monthsChanged = (next === 'dense') !== (previous === 'dense');
         if (monthsChanged && State.getProperty('assets').length) this.render();
     },
@@ -356,7 +370,9 @@ const Gallery = {
         if (!dateString) return 'unknown';
         const d = new Date(dateString);
         if (Number.isNaN(d.getTime())) return 'unknown';
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        // localDateTime is the clock time where the photo was taken, written with a Z:
+        // read it as-is (UTC) rather than shifting it into this browser's time zone.
+        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
     },
 
     dayLabel(dateString) {
@@ -364,8 +380,8 @@ const Gallery = {
         try {
             const d = new Date(dateString);
             const now = new Date();
-            const opts = { weekday: 'long', month: 'long', day: 'numeric' };
-            if (d.getFullYear() !== now.getFullYear()) {
+            const opts = { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' };
+            if (d.getUTCFullYear() !== now.getFullYear()) {
                 opts.year = 'numeric';
             }
             return d.toLocaleDateString(undefined, opts);
@@ -374,7 +390,7 @@ const Gallery = {
         }
     },
 
-    createGalleryItem(asset, index) {
+    createGalleryItem(asset, index, onOpen = () => Lightbox.open(asset, index)) {
         const item = document.createElement('div');
         item.className = 'gallery-item';
         item.setAttribute('role', 'button');
@@ -417,11 +433,11 @@ const Gallery = {
         overlay.textContent = this.formatDate(asset.localDateTime || asset.fileCreatedAt);
         item.appendChild(overlay);
 
-        item.addEventListener('click', () => Lightbox.open(asset, index));
+        item.addEventListener('click', onOpen);
         item.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                Lightbox.open(asset, index);
+                onOpen();
             }
         });
 
@@ -435,24 +451,22 @@ const Gallery = {
                 year: 'numeric',
                 month: 'short',
                 day: 'numeric',
+                timeZone: 'UTC',
             });
         } catch {
             return '';
         }
     },
 
-    /** A real total when Immich's timeline counts cover this view (the whole library,
-     *  one person, optionally jumped back in time); otherwise nothing, since search
-     *  results come a page at a time with no total. */
+    /** A real total on the timeline (the whole library or one person); nothing for
+     *  search results, which come a page at a time with no total. */
     updateResultCount(state) {
         let text = '';
-        if (!state.isLoading && state.assets.length === 0) {
+        if (Timeline.active) {
+            const total = Timeline.total;
+            text = `${total.toLocaleString()} ${total === 1 ? 'photo' : 'photos & videos'}`;
+        } else if (!state.isLoading && state.assets.length === 0) {
             text = 'No results';
-        } else {
-            const total = window.Scrubber?.totalFor(state);
-            if (Number.isFinite(total) && total > 0) {
-                text = `${total.toLocaleString()} ${total === 1 ? 'photo' : 'photos & videos'}`;
-            }
         }
         this.elements.resultCount.textContent = text;
         this._syncStatusBar();
@@ -473,10 +487,6 @@ const Gallery = {
 
         if (state.query) {
             filters.push({ label: `"${state.query}"`, key: 'query' });
-        }
-
-        if (state.jumpTo) {
-            filters.push({ label: `${Scrubber.monthLabel(state.jumpTo)} and earlier`, key: 'jump' });
         }
 
         if (state.personIds.length > 0) {
@@ -576,10 +586,6 @@ const Gallery = {
                 updates.city = '';
                 document.getElementById('location-city').value = '';
                 break;
-            case 'jump':
-                updates.jumpTo = null;
-                window.scrollTo({ top: 0 });
-                break;
         }
 
         updates.page = 1;
@@ -591,7 +597,8 @@ const Gallery = {
     },
 
     clearGallery() {
-        this.elements.gallery.querySelectorAll('.gallery-item img').forEach((img) => {
+        // Only the paged list's own groups; the scrolling timeline manages its months.
+        this.elements.gallery.querySelectorAll(':scope > .day-group .gallery-item img').forEach((img) => {
             if (img.dataset.loaded === '1') return;
             img.removeAttribute('src');
         });
@@ -600,7 +607,7 @@ const Gallery = {
         this.imageObserver = null;
         this._visibleImages = new Set();
 
-        this.elements.gallery.querySelectorAll('.day-group').forEach((el) => el.remove());
+        this.elements.gallery.querySelectorAll(':scope > .day-group').forEach((el) => el.remove());
     },
 
     showLoading() {

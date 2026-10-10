@@ -10,6 +10,15 @@ from app.routers import timeline
 from app.tokens import TokenStore
 
 PERSON = "12345678-1234-1234-1234-123456789abc"
+ASSET = "aaaaaaaa-1234-1234-1234-123456789abc"
+MONTH = {
+    "id": [ASSET],
+    "isImage": [False],
+    "visibility": ["timeline"],
+    "isTrashed": [False],
+    "fileCreatedAt": ["2024-02-10T03:30:00.000Z"],
+    "localOffsetHours": [-5],
+}
 
 
 @pytest.fixture
@@ -17,8 +26,10 @@ async def viewer(tmp_path):
     sent = []
 
     def upstream(request):
-        assert request.url.path == "/api/timeline/buckets"
         sent.append(dict(request.url.params))
+        if request.url.path == "/api/timeline/bucket":
+            return httpx.Response(200, json=MONTH)
+        assert request.url.path == "/api/timeline/buckets"
         return httpx.Response(200, json=[{"timeBucket": "2024-02-01", "count": 7}])
 
     app = FastAPI()
@@ -74,4 +85,36 @@ async def test_album_scoped_codes_get_no_scrubber(viewer):
     async with client_for(scoped) as client:
         response = await client.get("/api/timeline/buckets")
     assert response.json() == {"buckets": []}
+    assert sent == []
+
+
+async def test_month_photos_are_timeline_only(viewer):
+    client_for, full, _, sent = viewer
+    async with client_for(full) as client:
+        response = await client.get("/api/timeline/month", params={"month": "2024-02", "personId": PERSON})
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [{"id": ASSET, "type": "VIDEO", "localDateTime": "2024-02-09T22:30:00.000Z"}]
+    }
+    assert sent[-1] == {
+        "timeBucket": "2024-02-01T00:00:00.000Z",
+        "visibility": "timeline",
+        "personId": PERSON,
+    }
+
+
+@pytest.mark.parametrize("month", ["2024-13", "2024-2", "2024-02-01", "x"])
+async def test_month_must_be_a_month(viewer, month):
+    client_for, full, _, sent = viewer
+    async with client_for(full) as client:
+        response = await client.get("/api/timeline/month", params={"month": month})
+    assert response.status_code == 400
+    assert sent == []
+
+
+async def test_album_scoped_codes_get_no_month(viewer):
+    client_for, _, scoped, sent = viewer
+    async with client_for(scoped) as client:
+        response = await client.get("/api/timeline/month", params={"month": "2024-02"})
+    assert response.json() == {"items": []}
     assert sent == []

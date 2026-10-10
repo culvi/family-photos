@@ -1937,3 +1937,25 @@ html[data-view="large"] .view-cycle .vc-large {
     transition: none;
   }
 }
+
+/* ---- Scrolling timeline: one section per month ---- */
+.tl-months {
+  position: relative; /* the layout probe measures at this width */
+}
+
+.tl-month {
+  display: flow-root; /* day groups' margins stay inside, so heights add up exactly */
+}
+
+/* Not drawn yet: a skeleton of tiles at the real size */
+.tl-month:not(.rendered) {
+  margin: 0 0.35rem;
+  background-color: var(--color-surface-2);
+  background-image:
+    linear-gradient(to right, transparent var(--tl-tile-w, 100px), var(--color-bg) 0),
+    linear-gradient(to bottom, transparent var(--tl-tile-h, 100px), var(--color-bg) 0);
+  background-size:
+    calc(var(--tl-tile-w, 100px) + var(--tl-gap, 2px)) 100%,
+    100% calc(var(--tl-tile-h, 100px) + var(--tl-gap, 2px));
+  opacity: 0.55;
+}

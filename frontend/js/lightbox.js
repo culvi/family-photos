@@ -27,6 +27,9 @@ const Lightbox = {
 
     currentAsset: null,
     currentIndex: -1,
+    navigator: null,
+    _navItem: null,
+    _openTicket: 0,
     // Bumps on every displayMedia call so stale video handlers ignore themselves
     mediaGeneration: 0,
     _videoCleanup: null,
@@ -149,7 +152,13 @@ const Lightbox = {
         this.initZoomGestures();
     },
 
-    async open(asset, index) {
+    /**
+     * `navigator` (the scrolling timeline) supplies previous/next across months; without
+     * one, navigation walks the paged list in State.assets by index.
+     */
+    async open(asset, index, navigator = null) {
+        this.navigator = navigator;
+        this._navItem = asset;
         this.currentAsset = asset;
         this.currentIndex = index;
 
@@ -161,6 +170,22 @@ const Lightbox = {
         this.elements.lightbox.hidden = false;
         document.body.style.overflow = 'hidden';
         this.showLoading();
+
+        // Timeline entries carry only id/type/date. Get the file details first, so a JPEG
+        // opens (and downloads) as the original rather than the smaller preview.
+        if (asset.partial) {
+            const ticket = ++this._openTicket;
+            this.updateNavigation();
+            try {
+                const detailed = await API.getAsset(asset.id);
+                if (ticket !== this._openTicket || this.elements.lightbox.hidden) return;
+                asset = detailed;
+                this.currentAsset = detailed;
+            } catch (error) {
+                if (ticket !== this._openTicket || this.elements.lightbox.hidden) return;
+                console.error('Failed to load asset details:', error);
+            }
+        }
 
         const generation = this.displayMedia(asset);
         this.updateDownloadLink(asset);
@@ -193,6 +218,11 @@ const Lightbox = {
 
     close() {
         this.mediaGeneration++;
+        this._openTicket++;
+        const navigator = this.navigator;
+        const lastItem = this._navItem;
+        this.navigator = null;
+        this._navItem = null;
         this.elements.lightbox.hidden = true;
         document.body.style.overflow = '';
 
@@ -206,6 +236,8 @@ const Lightbox = {
             lightboxAssetId: null,
             lightboxIndex: -1,
         });
+
+        navigator?.reveal?.(lastItem);
     },
 
     /** Stop playback, drop sources, and detach video listeners. */
@@ -248,6 +280,13 @@ const Lightbox = {
     },
 
     async previous() {
+        if (this.navigator) {
+            if (!this._navItem || !this.navigator.hasPrevious(this._navItem)) return;
+            const navigator = this.navigator;
+            const item = await navigator.previous(this._navItem);
+            if (item && navigator === this.navigator) await this.open(item, item._index, navigator);
+            return;
+        }
         if (this.currentIndex <= 0) return;
         const assets = State.getProperty('assets');
         const prevAsset = assets[this.currentIndex - 1];
@@ -257,6 +296,13 @@ const Lightbox = {
     },
 
     async next() {
+        if (this.navigator) {
+            if (!this._navItem || !this.navigator.hasNext(this._navItem)) return;
+            const navigator = this.navigator;
+            const item = await navigator.next(this._navItem);
+            if (item && navigator === this.navigator) await this.open(item, item._index, navigator);
+            return;
+        }
         if (this.currentIndex < 0) return;
         let assets = State.getProperty('assets');
 
@@ -781,6 +827,13 @@ const Lightbox = {
     },
 
     updateNavigation() {
+        if (this.navigator && this._navItem) {
+            this.elements.prev.disabled = !this.navigator.hasPrevious(this._navItem);
+            this.elements.next.disabled = !this.navigator.hasNext(this._navItem);
+            this.elements.prev.style.opacity = this.elements.prev.disabled ? '0.3' : '1';
+            this.elements.next.style.opacity = this.elements.next.disabled ? '0.3' : '1';
+            return;
+        }
         const assets = State.getProperty('assets');
         const detached = this.currentIndex < 0;
 
@@ -795,7 +848,7 @@ const Lightbox = {
     updateMetadata(asset) {
         const datetime = asset.localDateTime || asset.fileCreatedAt;
         document.getElementById('meta-datetime').textContent = datetime
-            ? new Date(datetime).toLocaleString()
+            ? new Date(datetime).toLocaleString(undefined, { timeZone: 'UTC' }) // wall-clock time
             : '-';
 
         const exif = asset.exifInfo || {};

@@ -129,6 +129,11 @@ const API = {
         return this.get('/timeline/buckets', { personId });
     },
 
+    /** One month's photos, newest first: {items: [{id, type, localDateTime}]} */
+    async getTimelineMonth(month, personId = null) {
+        return this.get('/timeline/month', { month, personId });
+    },
+
     // People
     async getPeople(withHidden = false) {
         return this.get('/people', { withHidden });
