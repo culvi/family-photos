@@ -116,7 +116,7 @@ const Filters = {
         });
 
         this.elements.searchBtn.addEventListener('click', () => {
-            this.commitTextSearch();
+            this.commitSearchOrPerson();
         });
 
         this.elements.dateFrom.addEventListener('change', (e) => {
@@ -243,7 +243,7 @@ const Filters = {
                 if (person) this.selectSearchPerson(person.id);
                 return;
             }
-            this.commitTextSearch();
+            this.commitSearchOrPerson();
             return;
         }
 
@@ -253,6 +253,36 @@ const Filters = {
             e.preventDefault();
             this.removeSearchPerson(personIds[personIds.length - 1]);
         }
+    },
+
+    /**
+     * Enter (or the search button) with a name typed means that person, not a word
+     * search: "Jadyn" + Enter used to run a meaning search for the word and show
+     * whoever the AI thought looked like it. An exact name (or first name), or a single
+     * match, picks the person; several matches highlight the first so Enter again picks
+     * it; no match at all is a normal word search.
+     */
+    commitSearchOrPerson() {
+        const value = this.elements.searchInput.value.trim();
+        const matches = value ? this.matchingPeople(value) : [];
+        const wanted = value.toLowerCase();
+        const exact = matches.find((person) => {
+            const name = (person.name || '').trim().toLowerCase();
+            return name === wanted || name.split(/\s+/)[0] === wanted;
+        });
+        const pick = exact || (matches.length === 1 ? matches[0] : null);
+        if (pick) {
+            clearTimeout(this.searchDebounce);
+            this.selectSearchPerson(pick.id);
+            return;
+        }
+        if (matches.length > 1) {
+            clearTimeout(this.searchDebounce);
+            if (!this.isPersonSuggestOpen()) this.renderPersonSuggestions(value);
+            this.movePersonSuggestHighlight(1);
+            return;
+        }
+        this.commitTextSearch();
     },
 
     commitTextSearch() {
