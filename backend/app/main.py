@@ -21,7 +21,7 @@ from .config import settings
 from .deps import STATIC_DIR
 from .media_cache import MediaCache
 from .memory_cache import cache_manager
-from .routers import access, activity, assets, people, search, social, timeline
+from .routers import access, activity, assets, map, people, search, social, timeline
 from .security_headers import install_security_headers
 from .social_store import SocialStore
 from .tokens import TokenStore
@@ -101,10 +101,13 @@ if settings.social_enabled:
     app.include_router(social.router)
     app.include_router(activity.router)
 app.include_router(timeline.router)
+app.include_router(map.router)
 
 if (STATIC_DIR / "css").is_dir():
     app.mount("/css", StaticFiles(directory=str(STATIC_DIR / "css")), name="css")
 if (STATIC_DIR / "js").is_dir():
     app.mount("/js", StaticFiles(directory=str(STATIC_DIR / "js")), name="js")
+if (STATIC_DIR / "vendor").is_dir():  # third-party libraries, kept as released (map)
+    app.mount("/vendor", StaticFiles(directory=str(STATIC_DIR / "vendor")), name="vendor")
 if (STATIC_DIR / "fonts").is_dir():
     app.mount("/fonts", StaticFiles(directory=str(STATIC_DIR / "fonts")), name="fonts")

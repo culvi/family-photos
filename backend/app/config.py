@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     social_enabled: bool = False
     cache_ttl_suggestions: int = 600
 
+    # Places page: Immich's own map (vector tiles + light/dark styles). The page may fetch
+    # map data from map_connect_src and nothing else outside this site.
+    map_style_light: str = "https://tiles.immich.cloud/v1/style/light.json"
+    map_style_dark: str = "https://tiles.immich.cloud/v1/style/dark.json"
+    map_connect_src: str = "https://*.immich.cloud"
+
     # Previews and originals persist under ./data so they survive image rebuilds.
     media_cache_dir: str = "/data/media-cache"
     media_cache_max_bytes: int = 8 * 1024 * 1024 * 1024

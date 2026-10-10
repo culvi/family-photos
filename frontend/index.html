@@ -92,6 +92,12 @@
               <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
             </svg>
           </button>
+          <button type="button" id="map-toggle" class="btn-icon" aria-label="Places" aria-expanded="false" aria-controls="map-page" title="Places">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"></path>
+              <circle cx="12" cy="9.5" r="2.5"></circle>
+            </svg>
+          </button>
           <button id="filter-toggle" class="btn-icon" aria-label="Filters">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
@@ -263,6 +269,28 @@
       </div>
     </section>
 
+    <section class="map-page" id="map-page" role="dialog" aria-modal="true" aria-labelledby="map-title" hidden>
+      <div class="people-page-header map-page-header">
+        <h2 id="map-title">Places</h2>
+        <span class="people-count" id="map-count"></span>
+        <button type="button" class="btn-icon" id="map-close" aria-label="Close places">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="map-body">
+        <div class="map-canvas" id="map-canvas">
+          <p class="map-status" id="map-status">Loading map…</p>
+        </div>
+        <div class="map-photos" id="map-photos">
+          <h3 class="map-photos-title" id="map-photos-title"></h3>
+          <div class="map-photos-grid" id="map-photos-grid"></div>
+        </div>
+      </div>
+    </section>
+
     <div class="lightbox" id="lightbox" hidden>
       <div class="lightbox-overlay" id="lightbox-overlay"></div>
       <div class="lightbox-content">
@@ -377,6 +405,7 @@
   <script src="js/filters.js"></script>
   <script src="js/people.js"></script>
   <script src="js/scrubber.js"></script>
+  <script src="js/places.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

@@ -19,6 +19,7 @@ const App = {
         Lightbox.init();
         Filters.init();
         People.init();
+        Places.init();
         Scrubber.init();
 
         State.loadFromURL();
@@ -154,7 +155,8 @@ const App = {
                     y < header.offsetHeight ||
                     dy < 0 ||
                     document.activeElement === search ||
-                    window.People?.isOpen;
+                    window.People?.isOpen ||
+                    window.Places?.isOpen;
                 header.classList.toggle('header-hidden', !keep);
             },
             { passive: true }

@@ -27,6 +27,9 @@ const Lightbox = {
 
     currentAsset: null,
     currentIndex: -1,
+    navigator: null,
+    _navItem: null,
+    _openTicket: 0,
     // Bumps on every displayMedia call so stale video handlers ignore themselves
     mediaGeneration: 0,
     _videoCleanup: null,
@@ -149,7 +152,13 @@ const Lightbox = {
         this.initZoomGestures();
     },
 
-    async open(asset, index) {
+    /**
+     * `navigator` (e.g. Places) supplies previous/next for lists other than the gallery;
+     * without one, navigation walks the gallery's State.assets.
+     */
+    async open(asset, index, navigator = null) {
+        this.navigator = navigator;
+        this._navItem = asset;
         this.currentAsset = asset;
         this.currentIndex = index;
 
@@ -161,6 +170,22 @@ const Lightbox = {
         this.elements.lightbox.hidden = false;
         document.body.style.overflow = 'hidden';
         this.showLoading();
+
+        // Entries that carry only an id: get the file details first, so a JPEG opens (and
+        // downloads) as the original rather than the smaller preview.
+        if (asset.partial) {
+            const ticket = ++this._openTicket;
+            this.updateNavigation();
+            try {
+                const detailed = await API.getAsset(asset.id);
+                if (ticket !== this._openTicket || this.elements.lightbox.hidden) return;
+                asset = detailed;
+                this.currentAsset = detailed;
+            } catch (error) {
+                if (ticket !== this._openTicket || this.elements.lightbox.hidden) return;
+                console.error('Failed to load asset details:', error);
+            }
+        }
 
         const generation = this.displayMedia(asset);
         this.updateDownloadLink(asset);
@@ -193,8 +218,14 @@ const Lightbox = {
 
     close() {
         this.mediaGeneration++;
+        this._openTicket++;
+        const navigator = this.navigator;
+        const lastItem = this._navItem;
+        this.navigator = null;
+        this._navItem = null;
         this.elements.lightbox.hidden = true;
-        document.body.style.overflow = '';
+        // A page underneath (Places) keeps the body locked while it's open.
+        document.body.style.overflow = window.Places?.isOpen ? 'hidden' : '';
 
         this.resetImage();
         this.resetVideo();
@@ -206,6 +237,8 @@ const Lightbox = {
             lightboxAssetId: null,
             lightboxIndex: -1,
         });
+
+        navigator?.reveal?.(lastItem);
     },
 
     /** Stop playback, drop sources, and detach video listeners. */
@@ -247,6 +280,16 @@ const Lightbox = {
         }
     },
 
+    async _step(direction) {
+        const navigator = this.navigator;
+        const item = this._navItem;
+        if (!item) return;
+        const can = direction < 0 ? navigator.hasPrevious(item) : navigator.hasNext(item);
+        if (!can) return;
+        const target = await (direction < 0 ? navigator.previous(item) : navigator.next(item));
+        if (target && navigator === this.navigator) await this.open(target, target._k ?? -1, navigator);
+    },
+
     /** Where the open photo sits in the list now (newer photos may have been prepended). */
     _indexNow() {
         const id = this.currentAsset?.id;
@@ -255,6 +298,7 @@ const Lightbox = {
     },
 
     async previous() {
+        if (this.navigator) return this._step(-1);
         if (this.currentIndex < 0) return;
         let index = this._indexNow();
         if (index <= 0) {
@@ -273,6 +317,7 @@ const Lightbox = {
     },
 
     async next() {
+        if (this.navigator) return this._step(1);
         if (this.currentIndex < 0) return;
         let assets = State.getProperty('assets');
         let index = this._indexNow();
@@ -799,6 +844,13 @@ const Lightbox = {
     },
 
     updateNavigation() {
+        if (this.navigator && this._navItem) {
+            this.elements.prev.disabled = !this.navigator.hasPrevious(this._navItem);
+            this.elements.next.disabled = !this.navigator.hasNext(this._navItem);
+            this.elements.prev.style.opacity = this.elements.prev.disabled ? '0.3' : '1';
+            this.elements.next.style.opacity = this.elements.next.disabled ? '0.3' : '1';
+            return;
+        }
         const assets = State.getProperty('assets');
         const detached = this.currentIndex < 0;
         const index = this._indexNow();

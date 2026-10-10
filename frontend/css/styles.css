@@ -1937,3 +1937,100 @@ html[data-view="large"] .view-cycle .vc-large {
     transition: none;
   }
 }
+
+/* ---- Places: map of where photos were taken, with the photos in view below ---- */
+.map-page {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-sidebar) + 10);
+  background: var(--color-bg);
+  display: flex;
+  flex-direction: column;
+}
+.map-page[hidden] {
+  display: none !important;
+}
+.map-page-header {
+  border-bottom: 1px solid var(--color-border);
+}
+.map-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.map-canvas {
+  position: relative;
+  flex: 0 0 55%;
+  min-height: 0;
+  background: var(--color-surface-2);
+}
+.map-status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  pointer-events: none;
+}
+.map-status[hidden] {
+  display: none;
+}
+.map-photos {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.75rem 0.35rem calc(1rem + env(safe-area-inset-bottom, 0px));
+}
+.map-photos-title {
+  padding: 0 0.65rem 0.6rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.map-photos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 2px;
+}
+.map-photos-grid .gallery-item {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+}
+.map-photos-grid .gallery-item img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Wide screens: map beside the photos */
+@media (min-width: 900px) {
+  .map-body {
+    flex-direction: row;
+  }
+  .map-canvas {
+    flex: 1 1 auto;
+  }
+  .map-photos {
+    flex: 0 0 24rem;
+    border-left: 1px solid var(--color-border);
+  }
+}
+
+/* MapLibre's attribution and controls, in our colors */
+.map-canvas .maplibregl-ctrl-attrib {
+  font-size: 0.65rem;
+}
+:root.dark .map-canvas .maplibregl-ctrl-group {
+  background: var(--color-surface);
+}
+:root.dark .map-canvas .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(1);
+}

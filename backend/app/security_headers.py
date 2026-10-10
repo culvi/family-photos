@@ -1,8 +1,10 @@
 """Security response headers (CSP and friends), applied to every response.
 
 Everything the frontend loads is same-origin (no CDN scripts/fonts/analytics), so the
-policy can be strict. The one exception is /api/docs (Swagger UI, debug-only): it pulls
-its assets from a CDN, so the policy is skipped there rather than broken.
+policy can be strict. The map is the one outside source: the Places page may fetch map
+data (styles, vector tiles, fonts) from settings.map_connect_src; scripts, including the
+map library and its worker, are still same-origin only. /api/docs (Swagger UI,
+debug-only) pulls its assets from a CDN, so the policy is skipped there rather than broken.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ CONTENT_SECURITY_POLICY = (
     "img-src 'self' data: blob:; "
     "font-src 'self'; "
     "media-src 'self'; "
-    "connect-src 'self'; "
+    f"connect-src 'self' {settings.map_connect_src}; "
     "object-src 'none'; "
     "base-uri 'none'; "
     "form-action 'self'; "

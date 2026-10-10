@@ -43,7 +43,8 @@ def test_csp_allows_blob_images_without_relaxing_other_resource_types(app):
     }
     assert directives["img-src"] == "'self' data: blob:"
     assert directives["script-src"] == "'self'"
-    assert directives["connect-src"] == "'self'"
+    # Map data is the one outside source, and only for fetches (never scripts or frames)
+    assert directives["connect-src"] == "'self' https://*.immich.cloud"
     assert directives["object-src"] == "'none'"
     assert csp.count("blob:") == 1
 
