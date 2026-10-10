@@ -68,6 +68,7 @@ async def _recent_uploads(
         "page": 1,
         "size": min(max(limit, 1), 100),
         "createdAfter": created_after,
+        "visibility": "timeline",  # never archived
     }
     if scoped is not None:
         payload["albumIds"] = scoped

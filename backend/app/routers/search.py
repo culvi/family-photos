@@ -30,7 +30,9 @@ async def search_assets(
     Both together → smart search constrained to those people.
     Filter-only → metadata.
     """
-    search_payload: dict = {"page": filters.page, "size": filters.size}
+    # Only the normal timeline: archived photos are how Will hides things from family, and
+    # without this Immich returns archive (and hidden live-photo parts) too.
+    search_payload: dict = {"page": filters.page, "size": filters.size, "visibility": "timeline"}
     for key, value in (
         ("personIds", filters.personIds),
         ("make", filters.make),

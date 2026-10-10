@@ -23,7 +23,7 @@ async def get_assets(
     client: httpx.AsyncClient = Depends(get_client),
     token: TokenRecord = Depends(require_token),
 ):
-    payload: dict = {"page": page, "size": size}
+    payload: dict = {"page": page, "size": size, "visibility": "timeline"}  # never archived
     scoped_albums = album_ids_for_search(token)
     if scoped_albums is not None:
         if not scoped_albums:
