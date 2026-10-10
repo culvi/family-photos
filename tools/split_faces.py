@@ -150,8 +150,15 @@ def main(argv=None):
         F = P @ F
         F[clamp] = Y[clamp]
 
+    # Safety: only decide a face when there are checked/tagged examples of BOTH people
+    # from around the same time. Otherwise everything nearby would drift to whichever
+    # side happened to have examples (the 2019 lesson): leave it as it is.
+    a_known = np.array([label[j] == "A" for j in range(n)])
+    b_known = np.array([label[j] == "B" for j in range(n)])
     sure_b = {}
     for i in open_idx:
+        if not (near[i] & a_known).any() or not (near[i] & b_known).any():
+            continue
         fa, fb = F[pos[i]]
         total = fa + fb
         if total < 1e-6:
