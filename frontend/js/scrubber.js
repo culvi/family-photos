@@ -168,7 +168,7 @@ const Scrubber = {
             lastY = y;
 
             const label = document.createElement('span');
-            label.textContent = year;
+            label.textContent = this.shortYear(year);
             label.style.top = `${(entry.top * 100).toFixed(3)}%`;
             fragment.appendChild(label);
         });
@@ -269,12 +269,16 @@ const Scrubber = {
         Gallery.load();
     },
 
+    /** "2017-04" → "Apr '17" */
     monthLabel(month) {
         const [year, mon] = month.split('-').map(Number);
-        return new Date(year, mon - 1, 1).toLocaleDateString(undefined, {
-            month: 'long',
-            year: 'numeric',
-        });
+        const name = new Date(year, mon - 1, 1).toLocaleDateString(undefined, { month: 'short' });
+        return `${name} ${this.shortYear(year)}`;
+    },
+
+    /** 2018 → "'18" */
+    shortYear(year) {
+        return `\u2019${String(year).slice(-2)}`;
     },
 
     _scheduleIndicator() {
