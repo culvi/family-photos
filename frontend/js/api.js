@@ -124,6 +124,11 @@ const API = {
         return this.get('/search/suggestions');
     },
 
+    // Timeline scrubber: [{month: "YYYY-MM", count}], newest first
+    async getTimelineBuckets(personId = null) {
+        return this.get('/timeline/buckets', { personId });
+    },
+
     // People
     async getPeople(withHidden = false) {
         return this.get('/people', { withHidden });

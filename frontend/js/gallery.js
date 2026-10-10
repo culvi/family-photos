@@ -250,6 +250,7 @@ const Gallery = {
                 currentKey = key;
                 const group = document.createElement('section');
                 group.className = 'day-group';
+                group.dataset.day = key;
 
                 const header = document.createElement('h2');
                 header.className = 'day-header';
@@ -287,6 +288,7 @@ const Gallery = {
                 currentKey = key;
                 const group = document.createElement('section');
                 group.className = 'day-group';
+                group.dataset.day = key;
 
                 const header = document.createElement('h2');
                 header.className = 'day-header';
@@ -425,6 +427,10 @@ const Gallery = {
             filters.push({ label: `"${state.query}"`, key: 'query' });
         }
 
+        if (state.jumpTo) {
+            filters.push({ label: `${Scrubber.monthLabel(state.jumpTo)} and earlier`, key: 'jump' });
+        }
+
         if (state.personIds.length > 0) {
             const people = State.getProperty('people') || [];
             const peopleById = new Map(people.map((p) => [p.id, p]));
@@ -520,6 +526,10 @@ const Gallery = {
             case 'city':
                 updates.city = '';
                 document.getElementById('location-city').value = '';
+                break;
+            case 'jump':
+                updates.jumpTo = null;
+                window.scrollTo({ top: 0 });
                 break;
         }
 

@@ -15,6 +15,10 @@ const State = {
         country: '',
         city: '',
 
+        // Scrubber jump: show photos from this month ("YYYY-MM") back. Not a user filter:
+        // not counted in the badge or written to the URL.
+        jumpTo: null,
+
         // Pagination
         page: 1,
         size: 50,
@@ -135,11 +139,19 @@ const State = {
             cameraModel: '',
             country: '',
             city: '',
+            jumpTo: null,
             page: 1,
             assets: [],
             hasMore: true,
         });
         this.syncToURL();
+    },
+
+    /** "2012-03" -> "2012-03-31T23:59:59.999Z" (null passes through). */
+    endOfMonth(month) {
+        if (!month) return null;
+        const [year, mon] = month.split('-').map(Number);
+        return new Date(Date.UTC(year, mon, 0, 23, 59, 59, 999)).toISOString();
     },
 
     buildSearchPayload(loadMore = false) {
@@ -148,7 +160,7 @@ const State = {
             query: s.query || null,
             personIds: s.personIds.length > 0 ? s.personIds : null,
             takenAfter: s.dateFrom || null,
-            takenBefore: s.dateTo || null,
+            takenBefore: s.dateTo || this.endOfMonth(s.jumpTo),
             type: s.mediaType !== 'ALL' ? s.mediaType : null,
             make: s.cameraMake || null,
             model: s.cameraModel || null,

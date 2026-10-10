@@ -21,7 +21,7 @@ from .config import settings
 from .deps import STATIC_DIR
 from .media_cache import MediaCache
 from .memory_cache import cache_manager
-from .routers import access, activity, assets, people, search, social
+from .routers import access, activity, assets, people, search, social, timeline
 from .security_headers import install_security_headers
 from .social_store import SocialStore
 from .tokens import TokenStore
@@ -99,6 +99,7 @@ app.include_router(search.router)
 app.include_router(assets.router)
 app.include_router(social.router)
 app.include_router(activity.router)
+app.include_router(timeline.router)
 
 if (STATIC_DIR / "css").is_dir():
     app.mount("/css", StaticFiles(directory=str(STATIC_DIR / "css")), name="css")

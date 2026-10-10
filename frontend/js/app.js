@@ -20,6 +20,7 @@ const App = {
         Activity.init();
         Filters.init();
         People.init();
+        Scrubber.init();
 
         State.loadFromURL();
         await this.checkHealth();
