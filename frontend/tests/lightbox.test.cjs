@@ -474,3 +474,25 @@ test('videos hide download, share and copy', async () => {
     assert.equal(harness.elements.copy.hidden, true);
     assert.equal(harness.elements.downloadOriginal.hidden, true);
 });
+
+test('touch devices that can share get Share instead of Download; others keep Download', () => {
+    const harness = makeLightboxHarness();
+    const asset = { id: 'a', type: 'IMAGE', originalFileName: 'beach.jpg' };
+    harness.lightbox._canShareFiles = () => true;
+
+    harness.lightbox._isTouchDevice = () => true;
+    harness.lightbox.updateDownloadLink(asset);
+    assert.equal(harness.elements.download.hidden, true);
+    assert.equal(harness.elements.share.hidden, false);
+
+    harness.lightbox._isTouchDevice = () => false;
+    harness.lightbox.updateDownloadLink(asset);
+    assert.equal(harness.elements.download.hidden, false);
+    assert.equal(harness.elements.share.hidden, false);
+
+    harness.lightbox._canShareFiles = () => false;
+    harness.lightbox._isTouchDevice = () => true;
+    harness.lightbox.updateDownloadLink(asset);
+    assert.equal(harness.elements.download.hidden, false);
+    assert.equal(harness.elements.share.hidden, true);
+});

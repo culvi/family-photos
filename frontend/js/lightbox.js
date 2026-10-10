@@ -927,13 +927,16 @@ const Lightbox = {
     updateDownloadLink(asset) {
         const isVideo = asset.type === 'VIDEO';
         const { share, copy, downloadOriginal } = this.elements;
+        const canShare = this._canShareFiles();
 
         if (this.elements.download) {
-            this.elements.download.hidden = isVideo;
+            // On phones the share sheet's "Save Image" puts the photo in Photos, which
+            // beats Download (Files app). So touch + share-capable gets Share only.
+            this.elements.download.hidden = isVideo || (canShare && this._isTouchDevice());
             this.elements.download.dataset.assetId = asset.id;
             this.elements.download.dataset.fileName = asset.originalFileName || 'asset';
         }
-        if (share) share.hidden = isVideo || !this._canShareFiles();
+        if (share) share.hidden = isVideo || !canShare;
         if (copy) copy.hidden = isVideo || !this._canCopyImage();
 
         // RAW/HEIC originals are offered separately; JPEG/PNG originals are already
@@ -982,6 +985,14 @@ const Lightbox = {
             const nav = globalThis.navigator;
             if (!nav?.canShare || typeof File === 'undefined') return false;
             return nav.canShare({ files: [new File([''], 'test.jpg', { type: 'image/jpeg' })] });
+        } catch {
+            return false;
+        }
+    },
+
+    _isTouchDevice() {
+        try {
+            return Boolean(window.matchMedia?.('(pointer: coarse)').matches);
         } catch {
             return false;
         }
