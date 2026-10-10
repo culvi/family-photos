@@ -25,6 +25,7 @@ const Scrubber = {
     _dragging: false,
     _previewIndex: -1,
     _scrollFrame: 0,
+    _idleTimer: 0,
 
     init() {
         this.el.rail = document.getElementById('scrubber');
@@ -43,7 +44,14 @@ const Scrubber = {
         rail.addEventListener('keydown', (e) => this._onKeyDown(e));
         rail.addEventListener('blur', () => this._hideBubble());
 
-        window.addEventListener('scroll', () => this._scheduleIndicator(), { passive: true });
+        window.addEventListener(
+            'scroll',
+            () => {
+                this._scheduleIndicator();
+                this._wake();
+            },
+            { passive: true }
+        );
         window.addEventListener('resize', () => {
             if (!rail.hidden) this._renderLabels();
             this._placeRail();
@@ -196,6 +204,7 @@ const Scrubber = {
         if (!this._dragging) return;
         this._dragging = false;
         this.el.rail.classList.remove('dragging');
+        this._wake();
         const index = this._previewIndex;
         this._hideBubble();
         if (commit && index >= 0) this.jumpTo(this.layout[index].month);
@@ -212,7 +221,7 @@ const Scrubber = {
         const entry = this.layout[index];
         if (!entry) return;
         const label = this.monthLabel(entry.month);
-        const top = `${((entry.top + entry.height / 2) * 100).toFixed(3)}%`;
+        const top = this._placeAt(entry);
         this.el.bubble.textContent = label;
         this.el.bubble.style.top = top;
         this.el.indicator.style.top = top; // the handle follows the finger
@@ -289,8 +298,26 @@ const Scrubber = {
 
     _updateIndicator() {
         if (!this.layout.length || !this.el.indicator) return;
-        const entry = this.layout[this._currentIndex()];
-        this.el.indicator.style.top = `${((entry.top + entry.height / 2) * 100).toFixed(3)}%`;
+        this.el.indicator.style.top = this._placeAt(this.layout[this._currentIndex()]);
+    },
+
+    /** Pixel offset for a month's middle, kept far enough in that the whole handle shows. */
+    _placeAt(entry) {
+        const height = this.el.rail.clientHeight || 1;
+        const half = (this.el.indicator.offsetHeight || 0) / 2;
+        const y = (entry.top + entry.height / 2) * height;
+        return `${Math.round(Math.min(Math.max(y, half), height - half))}px`;
+    },
+
+    /** Touch: slide the tab in while scrolling, tuck it away once things are still. */
+    _wake() {
+        const rail = this.el.rail;
+        if (!rail || rail.hidden) return;
+        rail.classList.add('active');
+        clearTimeout(this._idleTimer);
+        this._idleTimer = setTimeout(() => {
+            if (!this._dragging) rail.classList.remove('active');
+        }, 1800);
     },
 };
 
