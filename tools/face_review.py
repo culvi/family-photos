@@ -36,8 +36,10 @@ def load_faces(path):
     with open(path, newline="") as handle:
         for row in csv.reader(handle):
             face_id, asset_id, group, taken, x1, y1, x2, y2, w, h = row[:10]
+            emb = json.loads(row[10]) if len(row) > 10 and row[10] else None
             faces.append(
                 {
+                    "emb": emb,
                     "id": face_id,
                     "asset": asset_id,
                     "group": group,
@@ -48,6 +50,44 @@ def load_faces(path):
             )
     faces.sort(key=lambda f: (f["taken"], f["asset"], f["box"][0]))
     return faces
+
+
+def guess_from_embeddings(faces, a, b, window_years=2.0, rounds=3):
+    """Guess which of A's faces are really B, from Immich's face fingerprints.
+
+    Score = how close a face is to B's own tagged faces minus how close it is to A's other
+    faces (same era only). A's group is itself mixed, so it's refined a few rounds, each
+    time leaving out the faces already guessed as B. Returns {face_id: score}.
+    """
+    import numpy as np
+
+    idx = [i for i, f in enumerate(faces) if f["emb"] is not None]
+    emb = np.array([faces[i]["emb"] for i in idx], dtype=np.float32)
+    emb /= np.linalg.norm(emb, axis=1, keepdims=True) + 1e-9
+    groups = np.array([faces[i]["group"] for i in idx])
+    assets = np.array([faces[i]["asset"] for i in idx])
+    years = np.array([int(faces[i]["taken"][:4]) + (int(faces[i]["taken"][5:7] or 1) - 1) / 12 for i in idx])
+    sims = emb @ emb.T
+    usable = (np.abs(years[:, None] - years[None, :]) <= window_years) & (assets[:, None] != assets[None, :])
+
+    def top_mean(mask, k=3):
+        s = np.where(mask, sims, -1.0)
+        k = min(k, s.shape[1])
+        return np.sort(s, axis=1)[:, -k:].mean(axis=1)
+
+    is_b = groups == b
+    is_a = groups == a
+    # A's group may hold many of B's faces, and those vouch for each other. So compare
+    # against A's least B-like faces only: each round drops the 40% most B-like.
+    to_b = top_mean(usable & is_b[None, :])
+    left_out = np.zeros(len(idx), dtype=bool)
+    score = np.zeros(len(idx))
+    for _ in range(rounds + 1):
+        to_a = top_mean(usable & (is_a & ~left_out)[None, :])
+        score = to_b - to_a
+        if is_a.any():
+            left_out = is_a & (score >= np.quantile(score[is_a], 0.6))
+    return {faces[i]["id"]: float(score[k]) for k, i in enumerate(idx) if is_a[k]}
 
 
 def load_plan(path):
@@ -130,7 +170,7 @@ function save() {
   }, 400);
 }
 
-function section(title, list) {
+function section(title, list, byScore) {
   const h = document.createElement('h2');
   h.innerHTML = `${title} <small>(${list.length})</small>`;
   root.appendChild(h);
@@ -139,9 +179,10 @@ function section(title, list) {
     if (!e.isIntersecting) return;
     const t = e.target; t.style.backgroundImage = `url("t/${t.dataset.asset}?k=${KEY}")`; io.unobserve(t);
   }), {rootMargin: '600px'});
-  list.forEach(f => {
-    if (f.taken.slice(0, 4) !== year) {
-      year = f.taken.slice(0, 4);
+  list.forEach((f, n) => {
+    const label = byScore ? `${Math.floor(n / 100) * 100 + 1}+  (most like Nayleigh first)` : f.taken.slice(0, 4);
+    if (label !== year) {
+      year = label;
       const y = document.createElement('h3'); y.textContent = year; root.appendChild(y);
       grid = document.createElement('div'); grid.className = 'grid'; root.appendChild(grid);
     }
@@ -165,7 +206,10 @@ function section(title, list) {
   faces = d.faces;
   faces.forEach(f => { f.start = d.guess[f.id] || 'A'; choice[f.id] = d.saved[f.id] || f.start; });
   section('Model thinks: Nayleigh', faces.filter(f => f.start === 'B'));
-  section('Model thinks: Nadia', faces.filter(f => f.start === 'A'));
+  const nadia = faces.filter(f => f.start === 'A');
+  const ranked = nadia.some(f => f.score !== undefined);
+  if (ranked) nadia.sort((x, y) => y.score - x.score);
+  section('Model thinks: Nadia' + (ranked ? ' — most Nayleigh-like first; stop once it is all Nadia' : ''), nadia, ranked);
   counts();
 })();
 </script></body></html>
@@ -178,13 +222,28 @@ def main(argv=None):
     ap.add_argument("--plan", default="", help="split_faces.py plan CSV with the model's guesses")
     ap.add_argument("--a", required=True, help="person group id holding the faces now (Nadia)")
     ap.add_argument("--b", required=True, help="person group id to move faces to (Nayleigh)")
+    ap.add_argument("--since", default="", help="YYYY-MM-DD: only review A's faces from this date")
+    ap.add_argument("--until", default="", help="YYYY-MM-DD: only review A's faces before this date")
     ap.add_argument("--port", type=int, default=8099)
     ap.add_argument("--out", default="face-review")
     args = ap.parse_args(argv)
 
-    faces = [f for f in load_faces(args.faces_csv) if f["group"] == args.a]
-    by_id = {f["id"]: f for f in faces}
+    every = load_faces(args.faces_csv)
+    scores = {}
     guess = load_plan(args.plan)
+    if not guess and any(f["emb"] is not None for f in every):
+        print("Comparing faces...")
+        scores = guess_from_embeddings(every, args.a, args.b)
+        guess = {fid: "B" if s > 0 else "A" for fid, s in scores.items()}
+    faces = [
+        {k: v for k, v in f.items() if k != "emb"} | ({"score": round(scores[f["id"]], 4)} if f["id"] in scores else {})
+        for f in every
+        if f["group"] == args.a
+        and (not args.since or f["taken"] >= args.since)
+        and (not args.until or f["taken"] < args.until)
+    ]
+    by_id = {f["id"]: f for f in faces}
+    table = "".join(c if c.isalnum() else "_" for c in args.out.lower()) + "_backup"
     state_path = Path(f"{args.out}.json")
     saved = json.loads(state_path.read_text()) if state_path.exists() else {}
     lock = threading.Lock()
@@ -203,9 +262,9 @@ def main(argv=None):
         ids = ",".join(f"'{fid}'" for fid in to_b) or "NULL"
         Path(f"{args.out}-apply.sql").write_text(
             "BEGIN;\n"
-            "CREATE TABLE IF NOT EXISTS face_split_backup AS\n"
+            f"CREATE TABLE IF NOT EXISTS {table} AS\n"
             '  SELECT id, "personGroupId", now() AS saved_at FROM asset_face WHERE false;\n'
-            'INSERT INTO face_split_backup SELECT id, "personGroupId", now() FROM asset_face\n'
+            f'INSERT INTO {table} SELECT id, "personGroupId", now() FROM asset_face\n'
             f"  WHERE id IN ({ids}) AND \"personGroupId\" = '{args.a}';\n"
             f"UPDATE asset_face SET \"personGroupId\" = '{args.b}'\n"
             f"  WHERE id IN ({ids}) AND \"personGroupId\" = '{args.a}';\n"
@@ -214,8 +273,8 @@ def main(argv=None):
         Path(f"{args.out}-undo.sql").write_text(
             "BEGIN;\n"
             'UPDATE asset_face f SET "personGroupId" = b."personGroupId"\n'
-            "  FROM face_split_backup b WHERE b.id = f.id;\n"
-            "DROP TABLE face_split_backup;\n"
+            f"  FROM {table} b WHERE b.id = f.id;\n"
+            f"DROP TABLE {table};\n"
             "COMMIT;\n"
         )
         return len(to_b)
