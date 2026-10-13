@@ -14,7 +14,7 @@ COPY (SELECT a.id, a."originalPath", a."fileCreatedAt", e.latitude, e.longitude
       FROM asset a JOIN asset_exif e ON e."assetId" = a.id
       WHERE a."deletedAt" IS NULL AND a."fileCreatedAt" BETWEEN '$FROM' AND '$TO') TO STDOUT WITH CSV;
 SQL
-docker run --rm -v "$REPO/tools:/tools" -v "$HOME:/work" -w /work python:3.11-slim \
+docker run --rm --user "$(id -u):$(id -g)" -v "$REPO/tools:/tools" -v "$HOME:/work" -w /work python:3.11-slim \
   python /tools/geo_match.py geo.csv --folder "$FOLDER" "$@"
 [ -s geo-xmp.csv ] || exit 0
 
