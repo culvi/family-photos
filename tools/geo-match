@@ -18,8 +18,20 @@ docker run --rm -v "$REPO/tools:/tools" -v "$HOME:/work" -w /work python:3.11-sl
   python /tools/geo_match.py geo.csv --folder "$FOLDER" "$@"
 [ -s geo-xmp.csv ] || exit 0
 
-# Immich's paths for the library may differ from the host's; map the folder by name.
-DIR="$(head -2 geo-xmp.csv | tail -1 | cut -d, -f1 | xargs dirname)"
+# Immich sees the library under its own container path; translate to this machine's path
+# using immich_server's volume mounts (longest matching prefix wins).
+MOUNTS="$(docker inspect -f '{{range .Mounts}}{{.Destination}}|{{.Source}}{{"\n"}}{{end}}' immich_server)"
+python3 - "$MOUNTS" <<'PY'
+import csv, sys
+mounts = [m.split("|", 1) for m in sys.argv[1].splitlines() if "|" in m]
+rows = list(csv.reader(open("geo-xmp.csv")))
+out = [rows[0]]
+for r in rows[1:]:
+    dest, src = max(((d, s) for d, s in mounts if r[0].startswith(d.rstrip("/") + "/")), key=lambda m: len(m[0]), default=("", ""))
+    out.append([src.rstrip("/") + r[0][len(dest.rstrip("/")):] if dest else r[0]] + r[1:])
+csv.writer(open("geo-xmp.csv", "w", newline="")).writerows(out)
+PY
+DIR="$(python3 -c 'import csv,os; r=list(csv.reader(open("geo-xmp.csv"))); print(os.path.dirname(r[1][0]))')"
 if [ ! -d "$DIR" ]; then
   echo "Can't find $DIR on this machine; nothing written." >&2; exit 1
 fi
