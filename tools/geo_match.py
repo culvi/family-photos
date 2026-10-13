@@ -75,14 +75,14 @@ def sessions(rows, folder: str, gap_minutes: float):
         if lat and lon:
             gps.append((t, float(lat), float(lon)))
         elif not (lat and lon) and folder in path:
-            targets.append((t, asset_id))
+            targets.append((t, asset_id, path))
     gps.sort()
     targets.sort()
     groups = []
-    for t, asset_id in targets:
+    for t, asset_id, path in targets:
         if not groups or t - groups[-1][-1][0] > gap_minutes * 60:
             groups.append([])
-        groups[-1].append((t, asset_id))
+        groups[-1].append((t, asset_id, path))
     out = []
     for g in groups:
         start, end = g[0][0], g[-1][0]
@@ -164,15 +164,24 @@ def main(argv=None):
             manual[int(n)] = (lat, lon)
         picked |= set(manual)
         if picked:
-            items = []
+            # Written into each photo's .xmp sidecar (by exiftool, via the geo-match wrapper),
+            # so Lightroom and Immich both read it from the file and rescans keep it.
+            rows_out, ids = [], []
             for n, (g, best) in enumerate(groups, 1):
                 spot = manual.get(n) or (best[1:] if best and n in picked else None)
                 if n in picked and spot:
-                    items += [(a, "", t, spot[0], spot[1], 0, "outing") for t, a in g]
-            print(f"\nSetting {len(items)} locations from outings {sorted(picked)}...")
-            print(f"Done: {apply(items)} updated.")
+                    for t, a, path in g:
+                        rows_out.append([os.path.splitext(path)[0] + ".xmp", f"{spot[0]:.6f}", f"{spot[1]:.6f}"])
+                        ids.append(a)
+            with open(f"{args.out}-xmp.csv", "w", newline="") as handle:
+                w = csv.writer(handle)
+                w.writerow(["SourceFile", "XMP-exif:GPSLatitude", "XMP-exif:GPSLongitude"])
+                w.writerows(rows_out)
+            with open(f"{args.out}-ids.txt", "w") as handle:
+                handle.write("\n".join(ids))
+            print(f"\nPrepared {len(rows_out)} locations from outings {sorted(picked)} -> {args.out}-xmp.csv")
         else:
-            print("\nPreview only. To set some: --accept 1,2,5 (outing numbers).")
+            print("\nPreview only. To set some: --accept 1,2,5 and/or --place 5=lat,lon")
         return
     items, n_gps = plan(rows, args.folder, args.max_minutes)
     matched = [i for i in items if i[3] is not None]

@@ -1,16 +1,41 @@
 #!/usr/bin/env bash
-# Run geo_match.py on Jarvis with the admin key from ~/.immich-admin-key.
-#   geo-match "/2026-04 Japan/" 2026-04-01 2026-05-01 [--outings --tz-hours 9 --accept 2,6,7 ...]
+# Borrow locations for camera photos and write them into their .xmp sidecars.
+#   geo-match "/2026-04 Japan/" 2026-04-01 2026-05-01 --outings --tz-hours 9            preview
+#   geo-match ... --outings --tz-hours 9 --accept 1,2 --place 5=35.0089,135.6747        write
+# After writing: Immich re-reads those photos; in Lightroom run Metadata -> Read Metadata from Files.
 set -euo pipefail
 FOLDER="$1"; FROM="$2"; TO="$3"; shift 3
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 set -a; . "$REPO/.env"; set +a
-docker exec -i immich_postgres psql -U postgres -d immich -At > "$HOME/geo.csv" <<SQL
+cd "$HOME"
+rm -f geo-xmp.csv geo-ids.txt
+docker exec -i immich_postgres psql -U postgres -d immich -At > geo.csv <<SQL
 COPY (SELECT a.id, a."originalPath", a."fileCreatedAt", e.latitude, e.longitude
       FROM asset a JOIN asset_exif e ON e."assetId" = a.id
       WHERE a."deletedAt" IS NULL AND a."fileCreatedAt" BETWEEN '$FROM' AND '$TO') TO STDOUT WITH CSV;
 SQL
-KEY=""; [ -s "$HOME/.immich-admin-key" ] && KEY="$(cat "$HOME/.immich-admin-key")"
-docker run --rm --network host -e IMMICH_URL="$IMMICH_URL" -e IMMICH_ADMIN_KEY="$KEY" \
-  -v "$REPO/tools:/tools" -v "$HOME:/work" -w /work python:3.11-slim \
+docker run --rm -v "$REPO/tools:/tools" -v "$HOME:/work" -w /work python:3.11-slim \
   python /tools/geo_match.py geo.csv --folder "$FOLDER" "$@"
+[ -s geo-xmp.csv ] || exit 0
+
+# Immich's paths for the library may differ from the host's; map the folder by name.
+DIR="$(head -2 geo-xmp.csv | tail -1 | cut -d, -f1 | xargs dirname)"
+if [ ! -d "$DIR" ]; then
+  echo "Can't find $DIR on this machine; nothing written." >&2; exit 1
+fi
+echo "Writing GPS into the .xmp files in $DIR ..."
+docker run --rm -v "$DIR:$DIR" -v "$HOME/geo-xmp.csv:/geo-xmp.csv:ro" alpine:3.20 sh -c \
+  "apk add -q exiftool >/dev/null && exiftool -q -csv=/geo-xmp.csv -overwrite_original_in_place -ext xmp '$DIR'"
+echo "Checked: $(grep -l -i GPSLatitude "$DIR"/*.xmp | wc -l) .xmp files in that folder now have GPS."
+
+# Ask Immich to re-read just those photos.
+KEY=""; [ -s "$HOME/.immich-admin-key" ] && KEY="$(cat "$HOME/.immich-admin-key")"
+IDS=$(sed 's/.*/"&"/' geo-ids.txt | paste -sd, -)
+code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$IMMICH_URL/api/assets/jobs" \
+  -H "x-api-key: $KEY" -H "content-type: application/json" -d "{\"assetIds\":[$IDS],\"name\":\"refresh-metadata\"}")
+if [ "$code" = "204" ] || [ "$code" = "200" ]; then
+  echo "Immich is re-reading them now."
+else
+  echo "Immich said $code to the refresh. In Immich: select those photos -> ⋮ -> Refresh metadata."
+fi
+echo "Lightroom: select the folder's photos -> Metadata -> Read Metadata from Files."
