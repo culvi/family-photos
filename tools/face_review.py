@@ -112,7 +112,7 @@ header b.a{color:var(--a)}header b.b{color:var(--b)}#saveState{color:var(--muted
 h2{margin:22px 16px 6px;font-size:17px}h2 small{color:var(--muted);font-weight:400}
 h3{margin:14px 16px 6px;font-size:13px;color:var(--muted);font-weight:500}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;padding:0 16px}
-.tile{position:relative;aspect-ratio:1;border-radius:10px;background:var(--card) no-repeat;border:3px solid transparent;cursor:pointer;overflow:hidden}
+.tile{user-select:none;-webkit-user-select:none;position:relative;aspect-ratio:1;border-radius:10px;background:var(--card) no-repeat;border:3px solid transparent;cursor:pointer;overflow:hidden}
 .tile.A{border-color:var(--a)}.tile.B{border-color:var(--b)}
 .tile .who{position:absolute;left:0;right:0;bottom:0;padding:2px 4px;font-size:11px;font-weight:600;text-align:center;background:#000a}
 .tile.A .who{color:var(--a)}.tile.B .who{color:var(--b)}
@@ -125,12 +125,46 @@ p.help{margin:8px 16px;color:var(--muted)}
 <span><b class="a">Nadia</b> <span id="na">0</span></span>
 <span>changed by you: <span id="nc">0</span></span>
 <span id="saveState">saved</span></header>
-<p class="help">Orange = Nayleigh, blue = Nadia. White ring = you changed it. ↗ opens the photo in Immich.</p>
+<p class="help">Orange = Nayleigh, blue = Nadia. White ring = you changed it. ↗ opens the photo in Immich.<br>
+Drag across faces to flip them all the same way. Shift-click flips everything since your last click.</p>
 <div id="root"></div>
 <script>
 const KEY = new URLSearchParams(location.search).get('k');
 const NAMES = {A: 'Nadia', B: 'Nayleigh'};
 let faces = [], choice = {}, guess = {}, timer = 0;
+const tiles = [];
+let dragValue = null, lastIndex = -1;
+
+function setTile(tile, value) {
+  if (choice[tile.face.id] === value) return;
+  choice[tile.face.id] = value;
+  paint(tile, tile.face);
+}
+
+// Click flips one face; drag paints every face you pass with that new value;
+// shift-click paints the whole run since the last click.
+document.addEventListener('pointerdown', e => {
+  const tile = e.target.closest('.tile');
+  if (!tile || e.target.closest('a') || e.button !== 0) return;
+  const value = choice[tile.face.id] === 'A' ? 'B' : 'A';
+  const index = tiles.indexOf(tile);
+  if (e.shiftKey && lastIndex >= 0) {
+    const [from, to] = [Math.min(lastIndex, index), Math.max(lastIndex, index)];
+    for (let i = from; i <= to; i++) setTile(tiles[i], value);
+  } else {
+    setTile(tile, value);
+    if (e.pointerType === 'mouse') dragValue = value;
+  }
+  lastIndex = index;
+  counts(); save();
+  e.preventDefault();
+});
+document.addEventListener('pointermove', e => {
+  if (dragValue === null) return;
+  const tile = document.elementFromPoint(e.clientX, e.clientY)?.closest('.tile');
+  if (tile) { setTile(tile, dragValue); lastIndex = tiles.indexOf(tile); counts(); }
+});
+document.addEventListener('pointerup', () => { if (dragValue !== null) { dragValue = null; save(); } });
 
 function crop(f) {
   const [x1, y1, x2, y2] = f.box, [W, H] = f.size;
@@ -191,10 +225,8 @@ function section(title, list, byScore) {
     tile.style.cssText = crop(f);
     tile.innerHTML = `<span class="who"></span><a href="https://neville.photos/photos/${f.asset}" target="_blank" rel="noopener" title="Open in Immich">↗</a>`;
     tile.querySelector('a').addEventListener('click', e => e.stopPropagation());
-    tile.addEventListener('click', () => {
-      choice[f.id] = choice[f.id] === 'A' ? 'B' : 'A';
-      paint(tile, f); counts(); save();
-    });
+    tile.face = f;
+    tiles.push(tile);
     paint(tile, f);
     grid.appendChild(tile);
     io.observe(tile);
