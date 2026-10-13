@@ -40,8 +40,7 @@ def plan(rows, folder: str, max_minutes: float):
     for asset_id, path, taken, lat, lon in rows:
         t = parse_time(taken)
         if lat and lon:
-            if folder not in path:
-                gps.append((t, float(lat), float(lon), asset_id))
+            gps.append((t, float(lat), float(lon), asset_id))
         elif folder in path:
             targets.append((t, asset_id, path))
     gps.sort()
@@ -73,7 +72,7 @@ def sessions(rows, folder: str, gap_minutes: float):
     gps, targets = [], []
     for asset_id, path, taken, lat, lon in rows:
         t = parse_time(taken)
-        if lat and lon and folder not in path:
+        if lat and lon:
             gps.append((t, float(lat), float(lon)))
         elif not (lat and lon) and folder in path:
             targets.append((t, asset_id))
