@@ -68,6 +68,34 @@ def plan(rows, folder: str, max_minutes: float):
     return out, len(gps)
 
 
+def sessions(rows, folder: str, gap_minutes: float):
+    """Group the camera photos into outings and suggest one place per outing."""
+    gps, targets = [], []
+    for asset_id, path, taken, lat, lon in rows:
+        t = parse_time(taken)
+        if lat and lon and folder not in path:
+            gps.append((t, float(lat), float(lon)))
+        elif not (lat and lon) and folder in path:
+            targets.append((t, asset_id))
+    gps.sort()
+    targets.sort()
+    groups = []
+    for t, asset_id in targets:
+        if not groups or t - groups[-1][-1][0] > gap_minutes * 60:
+            groups.append([])
+        groups[-1].append((t, asset_id))
+    out = []
+    for g in groups:
+        start, end = g[0][0], g[-1][0]
+        best = None
+        for gt, lat, lon in gps:
+            d = 0 if start <= gt <= end else min(abs(gt - start), abs(gt - end))
+            if best is None or d < best[0]:
+                best = (d, lat, lon)
+        out.append((g, best))
+    return out
+
+
 def apply(items):
     base = env("IMMICH_URL").rstrip("/") or "http://127.0.0.1:2283"
     key = env("IMMICH_API_KEY")
@@ -93,6 +121,8 @@ def apply(items):
                 )
             print(f"  {asset_id}: failed ({exc.code})", file=sys.stderr)
             continue
+        except urllib.error.URLError as exc:
+            sys.exit(f"\nCan't reach Immich at {base} ({exc.reason}). Run with --network host --env-file .env.")
         done += 1
     return done
 
@@ -104,10 +134,39 @@ def main(argv=None):
     ap.add_argument("--max-minutes", type=float, default=30)
     ap.add_argument("--out", default="geo")
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--outings", action="store_true", help="group photos into outings and suggest a place for each")
+    ap.add_argument("--outing-gap", type=float, default=45, help="minutes without photos that start a new outing")
+    ap.add_argument("--tz-hours", type=float, default=0, help="show times in this UTC offset (Japan = 9)")
+    ap.add_argument("--accept", default="", help="outing numbers to set to their suggested place, e.g. 1,2,5")
     args = ap.parse_args(argv)
 
     with open(args.csv, newline="") as handle:
         rows = [r[:5] for r in csv.reader(handle)]
+
+    if args.outings:
+        groups = sessions(rows, args.folder, args.outing_gap)
+        shift = args.tz_hours * 3600
+        fmt = lambda t: datetime.fromtimestamp(t + shift, timezone.utc).strftime("%a %b %d %H:%M")
+        print(f"\n{len(groups)} outings (times at UTC{args.tz_hours:+g}):\n")
+        for n, (g, best) in enumerate(groups, 1):
+            start, end = g[0][0], g[-1][0]
+            line = f"{n:3d}. {fmt(start)}-{fmt(end)[-5:]}  {len(g):3d} photos  https://neville.photos/photos/{g[0][1]}"
+            if best:
+                h = best[0] / 3600
+                when = "during" if best[0] == 0 else (f"{best[0] / 60:.0f} min away" if h < 1 else f"{h:.1f} h away")
+                line += f"\n      phone GPS {when}: https://maps.google.com/?q={best[1]:.5f},{best[2]:.5f}"
+            print(line)
+        picked = {int(x) for x in args.accept.split(",") if x.strip()}
+        if picked:
+            items = []
+            for n, (g, best) in enumerate(groups, 1):
+                if n in picked and best:
+                    items += [(a, "", t, best[1], best[2], 0, "outing") for t, a in g]
+            print(f"\nSetting {len(items)} locations from outings {sorted(picked)}...")
+            print(f"Done: {apply(items)} updated.")
+        else:
+            print("\nPreview only. To set some: --accept 1,2,5 (outing numbers).")
+        return
     items, n_gps = plan(rows, args.folder, args.max_minutes)
     matched = [i for i in items if i[3] is not None]
 
