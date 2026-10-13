@@ -214,7 +214,7 @@ function section(title, list, byScore) {
     const t = e.target; t.style.backgroundImage = `url("t/${t.dataset.asset}?k=${KEY}")`; io.unobserve(t);
   }), {rootMargin: '600px'});
   list.forEach((f, n) => {
-    const label = byScore ? `${Math.floor(n / 100) * 100 + 1}+  (most like Nayleigh first)` : f.taken.slice(0, 4);
+    const label = byScore ? `${f.taken.slice(0, 4)}  (most like Nayleigh first)` : f.taken.slice(0, 4);
     if (label !== year) {
       year = label;
       const y = document.createElement('h3'); y.textContent = year; root.appendChild(y);
@@ -240,8 +240,8 @@ function section(title, list, byScore) {
   section('Model thinks: Nayleigh', faces.filter(f => f.start === 'B'));
   const nadia = faces.filter(f => f.start === 'A');
   const ranked = nadia.some(f => f.score !== undefined);
-  if (ranked) nadia.sort((x, y) => y.score - x.score);
-  section('Model thinks: Nadia' + (ranked ? ' — most Nayleigh-like first; stop once it is all Nadia' : ''), nadia, ranked);
+  if (ranked) nadia.sort((x, y) => x.taken.slice(0, 4).localeCompare(y.taken.slice(0, 4)) || y.score - x.score);
+  section('Model thinks: Nadia' + (ranked ? ' — by year, most Nayleigh-like first in each' : ''), nadia, ranked);
   counts();
 })();
 </script></body></html>
@@ -256,6 +256,7 @@ def main(argv=None):
     ap.add_argument("--b", required=True, help="person group id to move faces to (Nayleigh)")
     ap.add_argument("--since", default="", help="YYYY-MM-DD: only review A's faces from this date")
     ap.add_argument("--until", default="", help="YYYY-MM-DD: only review A's faces before this date")
+    ap.add_argument("--born-b", default="", help="YYYY-MM-DD: B's birth date; earlier faces can't be B and are left out")
     ap.add_argument("--port", type=int, default=8099)
     ap.add_argument("--out", default="face-review")
     args = ap.parse_args(argv)
@@ -273,6 +274,7 @@ def main(argv=None):
         if f["group"] == args.a
         and (not args.since or f["taken"] >= args.since)
         and (not args.until or f["taken"] < args.until)
+        and (not args.born_b or f["taken"] >= args.born_b)
     ]
     by_id = {f["id"]: f for f in faces}
     table = "".join(c if c.isalnum() else "_" for c in args.out.lower()) + "_backup"
