@@ -23,7 +23,7 @@ APPLE_ID="$(cat "$CONF/username")"
 run() {
   docker run -it --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
     -v "$INBOX:/data" -v "$CONF:/cookies" icloudpd/icloudpd:latest \
-    icloudpd --directory /data --cookie-directory /cookies --username "$APPLE_ID" "$@"
+    icloudpd --directory /data --cookie-directory /cookies --username "$APPLE_ID" --log-level info "$@"
 }
 
 if [ "${1:-}" = "--list" ]; then
