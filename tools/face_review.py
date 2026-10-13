@@ -341,7 +341,10 @@ def main(argv=None):
             self.send_header("content-type", ctype)
             self.send_header("cache-control", "no-store" if ctype != "image/jpeg" else "max-age=86400")
             self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                pass  # the browser stopped loading it (scrolled past): fine
 
         def _ok(self):
             q = parse_qs(urlparse(self.path).query)
