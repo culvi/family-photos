@@ -137,6 +137,7 @@ def main(argv=None):
     ap.add_argument("--outing-gap", type=float, default=45, help="minutes without photos that start a new outing")
     ap.add_argument("--tz-hours", type=float, default=0, help="show times in this UTC offset (Japan = 9)")
     ap.add_argument("--accept", default="", help="outing numbers to set to their suggested place, e.g. 1,2,5")
+    ap.add_argument("--place", action="append", default=[], help="set an outing to a known spot: 5=35.0089,135.6747 (repeatable)")
     args = ap.parse_args(argv)
 
     with open(args.csv, newline="") as handle:
@@ -156,11 +157,18 @@ def main(argv=None):
                 line += f"\n      phone GPS {when}: https://maps.google.com/?q={best[1]:.5f},{best[2]:.5f}"
             print(line)
         picked = {int(x) for x in args.accept.split(",") if x.strip()}
+        manual = {}
+        for spec in args.place:
+            n, coords = spec.split("=")
+            lat, lon = (float(v) for v in coords.split(","))
+            manual[int(n)] = (lat, lon)
+        picked |= set(manual)
         if picked:
             items = []
             for n, (g, best) in enumerate(groups, 1):
-                if n in picked and best:
-                    items += [(a, "", t, best[1], best[2], 0, "outing") for t, a in g]
+                spot = manual.get(n) or (best[1:] if best and n in picked else None)
+                if n in picked and spot:
+                    items += [(a, "", t, spot[0], spot[1], 0, "outing") for t, a in g]
             print(f"\nSetting {len(items)} locations from outings {sorted(picked)}...")
             print(f"Done: {apply(items)} updated.")
         else:
