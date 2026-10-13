@@ -113,9 +113,9 @@ h2{margin:22px 16px 6px;font-size:17px}h2 small{color:var(--muted);font-weight:4
 h3{margin:14px 16px 6px;font-size:13px;color:var(--muted);font-weight:500}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;padding:0 16px}
 .tile{user-select:none;-webkit-user-select:none;position:relative;aspect-ratio:1;border-radius:10px;background:var(--card) no-repeat;border:3px solid transparent;cursor:pointer;overflow:hidden}
-.tile.A{border-color:var(--a)}.tile.B{border-color:var(--b)}
+.tile.A{border-color:var(--a)}.tile.B{border-color:var(--b)}.tile.X{border-color:#666;opacity:.55}
 .tile .who{position:absolute;left:0;right:0;bottom:0;padding:2px 4px;font-size:11px;font-weight:600;text-align:center;background:#000a}
-.tile.A .who{color:var(--a)}.tile.B .who{color:var(--b)}
+.tile.A .who{color:var(--a)}.tile.B .who{color:var(--b)}.tile.X .who{color:#bbb}
 .tile.changed{box-shadow:0 0 0 3px #fff}
 .tile a{position:absolute;top:3px;right:3px;width:22px;height:22px;border-radius:6px;background:#000a;color:#fff;text-decoration:none;font-size:13px;display:grid;place-items:center}
 p.help{margin:8px 16px;color:var(--muted)}
@@ -123,14 +123,16 @@ p.help{margin:8px 16px;color:var(--muted)}
 <header><span>Tap a face to flip it.</span>
 <span><b class="b">Nayleigh</b> <span id="nb">0</span></span>
 <span><b class="a">Nadia</b> <span id="na">0</span></span>
+<span><b>Neither</b> <span id="nx">0</span></span>
 <span>changed by you: <span id="nc">0</span></span>
 <span id="saveState">saved</span></header>
 <p class="help">Orange = Nayleigh, blue = Nadia. White ring = you changed it. ↗ opens the photo in Immich.<br>
-Drag across faces to flip them all the same way. Shift-click flips everything since your last click.</p>
+Drag across faces to flip them all the same way. Shift-click flips everything since your last click.
+Option-click (or Option-drag) = Neither: someone else, so the face is untagged.</p>
 <div id="root"></div>
 <script>
 const KEY = new URLSearchParams(location.search).get('k');
-const NAMES = {A: 'Nadia', B: 'Nayleigh'};
+const NAMES = {A: 'Nadia', B: 'Nayleigh', X: 'Neither'};
 let faces = [], choice = {}, guess = {}, timer = 0;
 const tiles = [];
 let dragValue = null, lastIndex = -1;
@@ -146,7 +148,8 @@ function setTile(tile, value) {
 document.addEventListener('pointerdown', e => {
   const tile = e.target.closest('.tile');
   if (!tile || e.target.closest('a') || e.button !== 0) return;
-  const value = choice[tile.face.id] === 'A' ? 'B' : 'A';
+  const now = choice[tile.face.id];
+  const value = e.altKey ? (now === 'X' ? 'A' : 'X') : (now === 'A' ? 'B' : 'A');
   const index = tiles.indexOf(tile);
   if (e.shiftKey && lastIndex >= 0) {
     const [from, to] = [Math.min(lastIndex, index), Math.max(lastIndex, index)];
@@ -188,6 +191,7 @@ function counts() {
   const v = Object.values(choice);
   nb.textContent = v.filter(c => c === 'B').length;
   na.textContent = v.filter(c => c === 'A').length;
+  nx.textContent = v.filter(c => c === 'X').length;
   nc.textContent = faces.filter(f => choice[f.id] !== f.start).length;
 }
 
@@ -293,15 +297,19 @@ def main(argv=None):
     def write_sql(changes):
         final = {f["id"]: changes.get(f["id"], guess.get(f["id"], "A")) for f in faces}
         to_b = [fid for fid, c in final.items() if c == "B"]
+        to_x = [fid for fid, c in final.items() if c == "X"]
         ids = ",".join(f"'{fid}'" for fid in to_b) or "NULL"
+        xids = ",".join(f"'{fid}'" for fid in to_x) or "NULL"
         Path(f"{args.out}-apply.sql").write_text(
             "BEGIN;\n"
             f"CREATE TABLE IF NOT EXISTS {table} AS\n"
             '  SELECT id, "personGroupId", now() AS saved_at FROM asset_face WHERE false;\n'
             f'INSERT INTO {table} SELECT id, "personGroupId", now() FROM asset_face\n'
-            f"  WHERE id IN ({ids}) AND \"personGroupId\" = '{args.a}';\n"
+            f"  WHERE id IN ({ids},{xids}) AND \"personGroupId\" = '{args.a}';\n"
             f"UPDATE asset_face SET \"personGroupId\" = '{args.b}'\n"
             f"  WHERE id IN ({ids}) AND \"personGroupId\" = '{args.a}';\n"
+            "UPDATE asset_face SET \"personGroupId\" = NULL\n"
+            f"  WHERE id IN ({xids}) AND \"personGroupId\" = '{args.a}';\n"
             "COMMIT;\n"
         )
         Path(f"{args.out}-undo.sql").write_text(
@@ -311,7 +319,7 @@ def main(argv=None):
             f"DROP TABLE {table};\n"
             "COMMIT;\n"
         )
-        return len(to_b)
+        return len(to_b) + len(to_x)
 
     def thumb(asset_id):
         path = cache / f"{asset_id}.jpg"
@@ -372,7 +380,7 @@ def main(argv=None):
             if urlparse(self.path).path != "/save" or not self._ok():
                 return self._send(403)
             body = json.loads(self.rfile.read(int(self.headers.get("content-length", 0))) or b"{}")
-            changes = {fid: c for fid, c in body.items() if fid in by_id and c in ("A", "B")}
+            changes = {fid: c for fid, c in body.items() if fid in by_id and c in ("A", "B", "X")}
             with lock:
                 saved.clear()
                 saved.update(changes)
