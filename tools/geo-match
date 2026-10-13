@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Run geo_match.py on Jarvis with the admin key from ~/.immich-admin-key.
+#   geo-match "/2026-04 Japan/" 2026-04-01 2026-05-01 [--outings --tz-hours 9 --accept 2,6,7 ...]
+set -euo pipefail
+FOLDER="$1"; FROM="$2"; TO="$3"; shift 3
+REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+set -a; . "$REPO/.env"; set +a
+docker exec -i immich_postgres psql -U postgres -d immich -At > "$HOME/geo.csv" <<SQL
+COPY (SELECT a.id, a."originalPath", a."fileCreatedAt", e.latitude, e.longitude
+      FROM asset a JOIN asset_exif e ON e."assetId" = a.id
+      WHERE a."deletedAt" IS NULL AND a."fileCreatedAt" BETWEEN '$FROM' AND '$TO') TO STDOUT WITH CSV;
+SQL
+KEY=""; [ -s "$HOME/.immich-admin-key" ] && KEY="$(cat "$HOME/.immich-admin-key")"
+docker run --rm --network host -e IMMICH_URL="$IMMICH_URL" -e IMMICH_ADMIN_KEY="$KEY" \
+  -v "$REPO/tools:/tools" -v "$HOME:/work" -w /work python:3.11-slim \
+  python /tools/geo_match.py geo.csv --folder "$FOLDER" "$@"

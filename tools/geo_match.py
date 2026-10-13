@@ -97,7 +97,7 @@ def sessions(rows, folder: str, gap_minutes: float):
 
 def apply(items):
     base = env("IMMICH_URL").rstrip("/") or "http://127.0.0.1:2283"
-    key = env("IMMICH_API_KEY")
+    key = env("IMMICH_ADMIN_KEY") or env("IMMICH_API_KEY")
     if not key:
         sys.exit("IMMICH_API_KEY is not set (run with --env-file .env)")
     done = 0

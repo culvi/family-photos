@@ -5,7 +5,7 @@
 #   take-uploads            uploads from the last day
 #   take-uploads 3          uploads from the last 3 days
 #
-# Asks for an Immich API key with the asset.delete permission (typed, not shown, not saved).
+# Uses the admin key in ~/.immich-admin-key (asset.delete); asks for one if that file is missing.
 set -euo pipefail
 
 DAYS="${1:-1}"
@@ -39,12 +39,16 @@ fi
 read -r -p "Move them to Immich's Trash now? [y/N] " ok
 [ "$ok" = "y" ] || { echo "Left them in Immich."; exit; }
 set -a; . "$(dirname "$(readlink -f "$0")")/../.env"; set +a
-read -r -s -p "Immich API key with asset.delete: " KEY; echo
+if [ -s "$HOME/.immich-admin-key" ]; then
+  KEY="$(cat "$HOME/.immich-admin-key")"
+else
+  read -r -s -p "Immich API key with asset.delete: " KEY; echo
+fi
 IDS=$("${DB[@]}" -c "SELECT string_agg('\"'||id||'\"', ',') FROM asset WHERE $WHERE;")
 code=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "$IMMICH_URL/api/assets" \
   -H "x-api-key: $KEY" -H "content-type: application/json" -d "{\"ids\":[$IDS]}")
 if [ "$code" = "204" ]; then
-  echo "Done: in Immich's Trash. Empty it there, then delete the API key."
+  echo "Done: in Immich's Trash. Empty it there."
 else
   echo "Immich said $code; nothing removed. The files are safe in the Inbox either way."
 fi
