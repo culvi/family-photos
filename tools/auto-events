@@ -83,6 +83,10 @@ PY
   while IFS=$'\t' read -r src dest; do
     mv -n "$src" "$dest" && moved=$((moved + 1))
   done < "$work/moves.tsv"
+  count=$(awk -F'\t' '$1=="COUNT"{print $2}' <<<"$plan")
+  if [ "$moved" -lt "${count:-0}" ]; then
+    log "$album: only moved $moved of $count into $folder (permissions?). Will retry next hour."; return 1
+  fi
   left=$(find "$dl" -maxdepth 1 -type f | wc -l)
   log "$album: $moved files -> $folder$( [ "$left" -gt 0 ] && echo "; $left left in Inbox (no date taken)")"
   [ "$left" -eq 0 ] && rmdir "$dl" 2>/dev/null
@@ -90,7 +94,7 @@ PY
   # 3. Immich: scan the library, wait until it has read the event folder, then GPS.
   for lib in $("${PSQL[@]}" -c 'SELECT id FROM library WHERE "deletedAt" IS NULL;'); do
     code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$IMMICH_URL/api/libraries/$lib/scan" -H "x-api-key: $KEY")
-    [ "$code" = "204" ] || log "$album: Immich scan said $code (key needs library.update)"
+    [[ "$code" == 2* ]] || log "$album: Immich scan said $code (key needs library.update)"
   done
   base=$(basename "$folder")
   want=$(find "$folder" -maxdepth 1 -type f ! -iname '*.xmp' ! -name '.*' | wc -l)
