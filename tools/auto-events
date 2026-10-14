@@ -144,10 +144,10 @@ PY
   echo "$geo" > "$STATE/geo-$base.txt"
   log "$album: GPS: $(grep -E 'Auto-accepted|NEEDS-YOU|Nothing left|Checked:|Stopped' <<<"$geo" | tr '\n' ' ')"
   grep -q NEEDS-YOU <<<"$geo" && log "$album: outings to decide are in $STATE/geo-$base.txt"
-  log "$album: DONE. Lightroom: right-click '$base' -> Synchronize Folder."
+  log "$album: DONE. Lightroom: right-click '$base' -> Synchronize Folder, then select all -> Read Metadata from Files."
   gps=$(grep -oE 'Checked: [0-9]+ of [0-9]+' <<<"$geo" | tail -1)
   todo=$(grep -oE 'NEEDS-YOU: .*' <<<"$geo")
-  notify "$album" "$album done: $moved phone photos in.${gps:+ GPS $gps.}${todo:+ Outings to decide: ${todo#NEEDS-YOU: }.} Lightroom: Synchronize Folder."
+  notify "$album" "$album done: $moved phone photos in.${gps:+ GPS $gps.}${todo:+ Outings to decide: ${todo#NEEDS-YOU: }.} Lightroom: Synchronize Folder, then Read Metadata from Files."
   return 0
 }
 
