@@ -34,10 +34,16 @@ fi
 for ALBUM in "$@"; do
   # Each album gets its own folder in the Inbox, named like the album.
   mkdir -p "$INBOX/$ALBUM"
-  docker run -it --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
-    -v "$INBOX/$ALBUM:/data" -v "$CONF:/cookies" icloudpd/icloudpd:latest \
-    icloudpd --directory /data --cookie-directory /cookies --username "$APPLE_ID" --log-level info \
-    --album "$ALBUM" --folder-structure none --skip-live-photos
+  # Apple sometimes answers "not finished indexing" on one call and works on the next; retry.
+  for try in 1 2 3 4 5 6; do
+    out=$(docker run -it --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+      -v "$INBOX/$ALBUM:/data" -v "$CONF:/cookies" icloudpd/icloudpd:latest \
+      icloudpd --directory /data --cookie-directory /cookies --username "$APPLE_ID" --log-level info \
+      --album "$ALBUM" --folder-structure none --skip-live-photos 2>&1 | tee /dev/stderr)
+    grep -q "not finished indexing" <<<"$out" || break
+    echo "Apple not ready for this album yet; trying again in 30s ($try/6)"
+    sleep 30
+  done
   echo "Done: $(find "$INBOX/$ALBUM" -maxdepth 1 -type f | wc -l) files in Inbox/iPhone/$ALBUM"
 done
 echo "Next: Lightroom → Import → Media-Storage → Inbox → iPhone → <album folder> → Move, with your preset."
