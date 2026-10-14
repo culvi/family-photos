@@ -16,7 +16,7 @@ WHERE="\"libraryId\" IS NULL AND \"deletedAt\" IS NULL AND \"createdAt\" > now()
 NOT_MOTION="id NOT IN (SELECT \"livePhotoVideoId\" FROM asset WHERE \"livePhotoVideoId\" IS NOT NULL)"
 
 mkdir -p "$INBOX"
-mapfile -t ROWS < <("${DB[@]}" -c "SELECT id, \"originalPath\", \"originalFileName\" FROM asset WHERE $WHERE AND $NOT_MOTION ORDER BY \"fileCreatedAt\";")
+mapfile -t ROWS < <("${DB[@]}" -c "SELECT id, \"originalPath\", \"originalFileName\", to_char(\"localDateTime\",'YYYY-MM') FROM asset WHERE $WHERE AND $NOT_MOTION ORDER BY \"fileCreatedAt\";")
 if [ "${#ROWS[@]}" -eq 0 ]; then
   echo "No phone-app uploads in the last $DAYS day(s)."
   exit
@@ -25,12 +25,15 @@ fi
 echo "Copying ${#ROWS[@]} photos/videos into $INBOX ..."
 copied=0
 for row in "${ROWS[@]}"; do
-  IFS=$'\t' read -r id path name <<<"$row"
-  dest="$INBOX/$name"
-  [ -e "$dest" ] && dest="$INBOX/${id:0:8}-$name"
+  IFS=$'\t' read -r id path name month <<<"$row"
+  # One subfolder per month taken, so each trip lands in its own folder.
+  mkdir -p "$INBOX/$month"
+  dest="$INBOX/$month/$name"
+  [ -e "$dest" ] && dest="$INBOX/$month/${id:0:8}-$name"
   docker cp "immich_server:$path" "$dest" && copied=$((copied + 1))
 done
-echo "Copied $copied of ${#ROWS[@]}."
+echo "Copied $copied of ${#ROWS[@]}, by month taken:"
+printf '%s\n' "${ROWS[@]}" | cut -f4 | sort | uniq -c
 if [ "$copied" -ne "${#ROWS[@]}" ]; then
   echo "Not all copied, so nothing was removed from Immich. Check the errors above."
   exit 1
@@ -52,4 +55,4 @@ if [ "$code" = "204" ]; then
 else
   echo "Immich said $code; nothing removed. The files are safe in the Inbox either way."
 fi
-echo "Next: Lightroom → Import → Media-Storage → Inbox → iPhone → Move, with your preset."
+echo "Next: Lightroom → Import → Media-Storage → Inbox → iPhone → <month folder> → Move, with your preset."
