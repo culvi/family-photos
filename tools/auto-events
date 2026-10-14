@@ -5,6 +5,8 @@
 #   auto-events list                           show the queue and what's done
 #   auto-events                                one pass now (what cron runs)
 #   auto-events --install                      run it every hour (cron)
+#   auto-events --setup-notify                 push to your phone via Home Assistant
+#   auto-events --test-notify                  send a test push
 #
 # For each queued album, once Apple lets icloudpd download it:
 #   1. downloads it to Inbox/iPhone/<album>
@@ -33,7 +35,31 @@ case "${1:-}" in
     line="7 * * * * $TOOLS/auto-events >/dev/null 2>&1"
     ( crontab -l 2>/dev/null | grep -v "tools/auto-events"; echo "$line" ) | crontab -
     echo "Installed: runs every hour at :07. Log: $LOG"; exit ;;
+  --setup-notify)
+    read -r -p "Home Assistant URL [http://127.0.0.1:8123]: " url; url="${url:-http://127.0.0.1:8123}"
+    read -r -s -p "Home Assistant long-lived token (not shown): " tok; echo
+    svcs=$(curl -s -H "Authorization: Bearer $tok" "$url/api/services" | python3 -c '
+import json,sys
+for d in json.load(sys.stdin):
+    if d["domain"]=="notify":
+        print("\n".join(s for s in d["services"] if s.startswith("mobile_app")))' 2>/dev/null)
+    [ -n "$svcs" ] || { echo "Couldn't reach Home Assistant or no phones found; check URL/token."; exit 1; }
+    echo "Phones:"; echo "$svcs" | nl
+    read -r -p "Number of your phone: " n; svc=$(echo "$svcs" | sed -n "${n}p")
+    umask 077; printf 'HA_URL=%s\nHA_TOKEN=%s\nHA_SVC=%s\n' "$url" "$tok" "$svc" > "$STATE/notify"
+    echo "Saved. Try: auto-events --test-notify"; exit ;;
 esac
+
+notify() {   # notify <key> <message>: push once per distinct message per key
+  [ -s "$STATE/notify" ] || return 0
+  local key="$1" msg="$2" last="$STATE/notified-$(echo "$1" | tr -c 'A-Za-z0-9' _)"
+  [ "$(cat "$last" 2>/dev/null)" = "$msg" ] && return 0
+  ( . "$STATE/notify"
+    body=$(python3 -c 'import json,sys; print(json.dumps({"title":"Photos","message":sys.argv[1]}))' "$msg")
+    curl -s -o /dev/null -X POST -H "Authorization: Bearer $HA_TOKEN" -H "content-type: application/json" \
+      -d "$body" "$HA_URL/api/services/notify/$HA_SVC" ) && echo "$msg" > "$last"
+}
+[ "${1:-}" = "--test-notify" ] && { rm -f "$STATE/notified-test"; notify test "Test from Jarvis auto-events"; echo sent; exit; }
 
 exec 9>"$STATE/lock"; flock -n 9 || exit 0     # one run at a time
 log() { echo "$(date '+%F %T') $*" | tee -a "$LOG"; }
@@ -54,7 +80,8 @@ process() {
         --album "$album" --folder-structure none --skip-live-photos 2>&1 </dev/null)
   if grep -q "not finished indexing" <<<"$out"; then log "$album: Apple not ready yet"; return 1; fi
   if grep -qiE "password|two-factor|2fa|authenticat" <<<"$out" && ! grep -q "All photos" <<<"$out"; then
-    log "$album: iCloud sign-in expired. Run 'pull-iphone --list' once and enter the code."; return 1
+    log "$album: iCloud sign-in expired. Run 'pull-iphone --list' once and enter the code."
+    notify signin "iCloud sign-in expired. On Jarvis run: pull-iphone --list"; return 1
   fi
   grep -q "All photos" <<<"$out" || { log "$album: download didn't finish: $(tail -1 <<<"$out")"; return 1; }
   [ -n "$(ls -A "$dl")" ] || { log "$album: album is empty"; return 1; }
@@ -62,7 +89,8 @@ process() {
   # 2. Plan names, write metadata, move into the event folder.
   "${EXIF[@]}" "apk add -q exiftool >/dev/null && exiftool -q -q -csv -DateTimeOriginal -CreateDate '$dl' > '$work/dump.csv'"
   plan=$(PHOTOS=/mnt/Media-Storage/Photos python3 "$TOOLS/auto_events.py" "$work/dump.csv" "$album" "$work/plan.csv" 2>&1) \
-    || { log "$album: $plan (make the folder in Lightroom, then it retries next hour)"; return 1; }
+    || { log "$album: $plan (make the folder in Lightroom, then it retries next hour)"
+         notify "$album" "$album: no matching event folder. Make it in Lightroom; retries hourly."; return 1; }
   folder=$(awk -F'\t' '$1=="FOLDER"{print $2}' <<<"$plan")
   python3 - "$work/plan.csv" "$work" "$COPYRIGHT" "$CREATOR" <<'PY'
 import csv, sys
@@ -85,7 +113,8 @@ PY
   done < "$work/moves.tsv"
   count=$(awk -F'\t' '$1=="COUNT"{print $2}' <<<"$plan")
   if [ "$moved" -lt "${count:-0}" ]; then
-    log "$album: only moved $moved of $count into $folder (permissions?). Will retry next hour."; return 1
+    log "$album: only moved $moved of $count into $folder (permissions?). Will retry next hour."
+    notify "$album" "$album: only moved $moved of $count files; check ~/auto-events.log"; return 1
   fi
   left=$(find "$dl" -maxdepth 1 -type f | wc -l)
   log "$album: $moved files -> $folder$( [ "$left" -gt 0 ] && echo "; $left left in Inbox (no date taken)")"
@@ -116,6 +145,9 @@ PY
   log "$album: GPS: $(grep -E 'Auto-accepted|NEEDS-YOU|Nothing left|Checked:|Stopped' <<<"$geo" | tr '\n' ' ')"
   grep -q NEEDS-YOU <<<"$geo" && log "$album: outings to decide are in $STATE/geo-$base.txt"
   log "$album: DONE. Lightroom: right-click '$base' -> Synchronize Folder."
+  gps=$(grep -oE 'Checked: [0-9]+ of [0-9]+' <<<"$geo" | tail -1)
+  todo=$(grep -oE 'NEEDS-YOU: .*' <<<"$geo")
+  notify "$album" "$album done: $moved phone photos in.${gps:+ GPS $gps.}${todo:+ Outings to decide: ${todo#NEEDS-YOU: }.} Lightroom: Synchronize Folder."
   return 0
 }
 
