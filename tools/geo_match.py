@@ -19,6 +19,7 @@ import bisect
 import csv
 import json
 import os
+import re
 import sys
 import urllib.request
 from datetime import datetime, timezone
@@ -143,6 +144,7 @@ def main(argv=None):
     ap.add_argument("--accept", default="", help="outing numbers to set to their suggested place, e.g. 1,2,5")
     ap.add_argument("--auto-minutes", type=float, default=0,
                     help="accept every outing whose nearest phone GPS is within this many minutes")
+    ap.add_argument("--clear", default="", help="outing numbers to remove GPS from, e.g. 6")
     ap.add_argument("--place", action="append", default=[], help="set an outing to a known spot: 5=35.0089,135.6747 (repeatable)")
     args = ap.parse_args(argv)
 
@@ -150,7 +152,22 @@ def main(argv=None):
         rows = [r[:5] for r in csv.reader(handle)]
 
     if args.outings:
-        groups = sessions(rows, args.folder, args.outing_gap)
+        # Outing numbers must stay the ones you were shown: a preview (or an auto run) saves them,
+        # and --accept/--place/--clear reuse that saved list instead of renumbering.
+        saved = f"{args.out}-outings-{re.sub(r'[^A-Za-z0-9]+', '_', args.folder).strip('_')}.json"
+        acting = bool(args.accept.strip() or args.place or args.clear) and not args.auto_minutes
+        byid = {a: (parse_time(t), p) for a, p, t, *_ in rows}
+        if acting and os.path.exists(saved):
+            groups = []
+            for o in json.load(open(saved)):
+                g = [(byid[a][0], a, byid[a][1]) for a in o["ids"] if a in byid]
+                if g:
+                    groups.append((sorted(g), tuple(o["best"]) if o["best"] else None))
+            print(f"(Using the outing numbers from your last preview: {saved})")
+        else:
+            groups = sessions(rows, args.folder, args.outing_gap)
+            json.dump([{"ids": [a for _, a, _ in g], "best": list(b) if b else None} for g, b in groups],
+                      open(saved, "w"))
         shift = args.tz_hours * 3600
         fmt = lambda t: datetime.fromtimestamp(t + shift, timezone.utc).strftime("%a %b %d %H:%M")
         print(f"\n{len(groups)} outings (times at UTC{args.tz_hours:+g}):\n")
@@ -175,13 +192,16 @@ def main(argv=None):
             lat, lon = (float(v) for v in coords.split(","))
             manual[int(n)] = (lat, lon)
         picked |= set(manual)
-        if picked:
+        cleared = {int(x) for x in args.clear.split(",") if x.strip()}
+        if picked or cleared:
             # Written into each photo's .xmp sidecar (by exiftool, via the geo-match wrapper),
             # so Lightroom and Immich both read it from the file and rescans keep it.
             rows_out, ids, skipped = [], [], 0
             for n, (g, best) in enumerate(groups, 1):
                 spot = manual.get(n) or (best[1:] if best and n in picked else None)
-                if n in picked and spot:
+                if n in cleared:
+                    spot = ("", "")
+                if (n in picked and spot) or n in cleared:
                     for t, a, path in g:
                         base, ext = os.path.splitext(path)
                         if ext.lower() in VIDEO:
@@ -189,7 +209,8 @@ def main(argv=None):
                             continue
                         # RAW: Lightroom keeps metadata in a .xmp sidecar. JPG/HEIC/etc: inside the file.
                         target = base + ".xmp" if ext.lower() in RAW else path
-                        rows_out.append([target, f"{spot[0]:.6f}", f"{spot[1]:.6f}"])
+                        fmt6 = lambda v: f"{v:.6f}" if v != "" else ""
+                        rows_out.append([target, fmt6(spot[0]), fmt6(spot[1])])
                         ids.append(a)
             with open(f"{args.out}-xmp.csv", "w", newline="") as handle:
                 w = csv.writer(handle)
@@ -199,7 +220,8 @@ def main(argv=None):
                 handle.write("\n".join(ids))
             if skipped:
                 print(f"\nSkipped {skipped} videos (left as they are).")
-            print(f"\nPrepared {len(rows_out)} locations from outings {sorted(picked)} -> {args.out}-xmp.csv")
+            print(f"\nPrepared {len(rows_out)} locations from outings {sorted(picked)}"
+                  + (f", clearing {sorted(cleared)}" if cleared else "") + f" -> {args.out}-xmp.csv")
         else:
             print("\nPreview only. To set some: --accept 1,2,5 and/or --place 5=lat,lon")
         return

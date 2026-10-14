@@ -52,6 +52,8 @@ import csv
 rows = list(csv.reader(open("geo-xmp.csv")))[1:]
 side = [r for r in rows if r[0].lower().endswith(".xmp")]
 emb = [r for r in rows if not r[0].lower().endswith(".xmp")]
+clear = [r[0] for r in rows if r[1] == ""]
+side = [r for r in side if r[1] != ""]; emb = [r for r in emb if r[1] != ""]
 with open("geo-side.csv", "w", newline="") as f:
     w = csv.writer(f); w.writerow(["SourceFile", "XMP-exif:GPSLatitude", "XMP-exif:GPSLongitude"]); w.writerows(side)
 with open("geo-emb.csv", "w", newline="") as f:
@@ -61,18 +63,21 @@ with open("geo-emb.csv", "w", newline="") as f:
     w.writerows([[p, la, la, lo, lo, la, lo] for p, la, lo in emb])
 open("geo-side.txt", "w").write("".join(r[0] + "\n" for r in side))
 open("geo-emb.txt", "w").write("".join(r[0] + "\n" for r in emb))
-print(f"Writing GPS: {len(side)} RAW sidecars, {len(emb)} photos directly")
+open("geo-clear.txt", "w").write("".join(p + "\n" for p in clear))
+print(f"Writing GPS: {len(side)} RAW sidecars, {len(emb)} photos directly" + (f"; removing GPS from {len(clear)}" if clear else ""))
 PY
 echo "Folder: $DIR"
 docker run --rm -v "$DIR:$DIR" -v "$HOME:/w:ro" alpine:3.20 sh -c '
   apk add -q exiftool >/dev/null
   [ -s /w/geo-side.txt ] && exiftool -q -q -csv=/w/geo-side.csv -overwrite_original_in_place -@ /w/geo-side.txt
   [ -s /w/geo-emb.txt ] && exiftool -q -q -csv=/w/geo-emb.csv -overwrite_original_in_place -@ /w/geo-emb.txt
+  [ -s /w/geo-clear.txt ] && exiftool -q -q -overwrite_original_in_place -GPS:all= -XMP-exif:GPSLatitude= -XMP-exif:GPSLongitude= -@ /w/geo-clear.txt
+  [ -s /w/geo-clear.txt ] && echo "Removed GPS from $(exiftool -q -q -T -GPSLatitude -@ /w/geo-clear.txt | grep -c "^-$") of $(grep -c . /w/geo-clear.txt)."
   cat /w/geo-side.txt /w/geo-emb.txt > /tmp/all.txt
   t=$(grep -c . /tmp/all.txt)
-  n=$(exiftool -q -q -T -GPSLatitude -@ /tmp/all.txt | grep -vc "^-$")
+  n=0; [ "$t" -gt 0 ] && n=$(exiftool -q -q -T -GPSLatitude -@ /tmp/all.txt | grep -vc "^-$")
   echo "Checked: $n of $t now have GPS."'
-rm -f geo-side.csv geo-emb.csv geo-side.txt geo-emb.txt
+rm -f geo-side.csv geo-emb.csv geo-side.txt geo-emb.txt geo-clear.txt
 
 # Ask Immich to re-read just those photos.
 KEY=""; [ -s "$HOME/.immich-admin-key" ] && KEY="$(cat "$HOME/.immich-admin-key")"
