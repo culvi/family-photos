@@ -2,7 +2,7 @@
 # Pull one iPhone album from iCloud into the Inbox on the media drive, for a Lightroom import.
 # Runs only when you call it; nothing keeps syncing.
 #
-#   pull-iphone "Japan 2026"     download that album
+#   pull-iphone "Japan 2026"     download that album (several names = several albums)
 #   pull-iphone --list           show your iCloud album names
 #
 # First run asks for your Apple ID email (saved), password and 2FA code (not saved; iCloud
@@ -26,13 +26,18 @@ run() {
     icloudpd --directory /data --cookie-directory /cookies --username "$APPLE_ID" --log-level info "$@"
 }
 
-if [ "${1:-}" = "--list" ]; then
+if [ "${1:-}" = "--list" ] || [ $# -eq 0 ]; then
   run --list-albums
   exit
 fi
 
-ALBUM="${1:?Usage: pull-iphone \"Album name\"   (or --list)}"
-run --album "$ALBUM" --folder-structure none --skip-live-photos
-echo
-echo "Done: $(find "$INBOX" -maxdepth 1 -type f | wc -l) files in Inbox/iPhone."
-echo "Next: Lightroom → Import → Media-Storage → Inbox → iPhone → Move, with your preset."
+for ALBUM in "$@"; do
+  # Each album gets its own folder in the Inbox, named like the album.
+  mkdir -p "$INBOX/$ALBUM"
+  docker run -it --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+    -v "$INBOX/$ALBUM:/data" -v "$CONF:/cookies" icloudpd/icloudpd:latest \
+    icloudpd --directory /data --cookie-directory /cookies --username "$APPLE_ID" --log-level info \
+    --album "$ALBUM" --folder-structure none --skip-live-photos
+  echo "Done: $(find "$INBOX/$ALBUM" -maxdepth 1 -type f | wc -l) files in Inbox/iPhone/$ALBUM"
+done
+echo "Next: Lightroom → Import → Media-Storage → Inbox → iPhone → <album folder> → Move, with your preset."

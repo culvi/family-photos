@@ -8,6 +8,9 @@
 # Uses the admin key in ~/.immich-admin-key (asset.delete); asks for one if that file is missing.
 set -euo pipefail
 
+#   take-uploads --trash-only 2  skip the copy; just move the last 2 days of uploads to Trash
+TRASH_ONLY=""
+[ "${1:-}" = "--trash-only" ] && { TRASH_ONLY=1; shift; }
 DAYS="${1:-1}"
 INBOX="${INBOX:-/mnt/Media-Storage/Inbox/iPhone}"
 DB=(docker exec -i immich_postgres psql -U postgres -d immich -At -F $'\t')
@@ -22,6 +25,10 @@ if [ "${#ROWS[@]}" -eq 0 ]; then
   exit
 fi
 
+if [ -n "$TRASH_ONLY" ]; then
+  printf '%s\n' "${ROWS[@]}" | cut -f4 | sort | uniq -c
+  echo "${#ROWS[@]} uploads above (by month taken) will NOT be copied."
+else
 echo "Copying ${#ROWS[@]} photos/videos into $INBOX ..."
 copied=0
 for row in "${ROWS[@]}"; do
@@ -37,6 +44,7 @@ printf '%s\n' "${ROWS[@]}" | cut -f4 | sort | uniq -c
 if [ "$copied" -ne "${#ROWS[@]}" ]; then
   echo "Not all copied, so nothing was removed from Immich. Check the errors above."
   exit 1
+fi
 fi
 
 read -r -p "Move them to Immich's Trash now? [y/N] " ok
