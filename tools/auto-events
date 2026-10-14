@@ -74,6 +74,8 @@ process() {
   mkdir -p "$dl" "$work"; rm -f "$work"/*
 
   # 1. Download (no prompts; if iCloud wants a new sign-in, say so and stop).
+  #    A finished download leaves .downloaded so later runs don't need Apple again.
+  if [ ! -e "$dl/.downloaded" ]; then
   out=$(docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$dl:/data" -v "$CONF:/cookies" \
         icloudpd/icloudpd:latest icloudpd --directory /data --cookie-directory /cookies \
         --username "$APPLE_ID" --log-level info --no-progress-bar \
@@ -85,6 +87,8 @@ process() {
   fi
   grep -q "All photos" <<<"$out" || { log "$album: download didn't finish: $(tail -1 <<<"$out")"; return 1; }
   [ -n "$(ls -A "$dl")" ] || { log "$album: album is empty"; return 1; }
+  touch "$dl/.downloaded"
+  fi
 
   # 2. Plan names, write metadata, move into the event folder.
   "${EXIF[@]}" "apk add -q exiftool >/dev/null && exiftool -q -q -csv -DateTimeOriginal -CreateDate '$dl' > '$work/dump.csv'"
@@ -116,9 +120,9 @@ PY
     log "$album: only moved $moved of $count into $folder (permissions?). Will retry next hour."
     notify "$album" "$album: only moved $moved of $count files; check ~/auto-events.log"; return 1
   fi
-  left=$(find "$dl" -maxdepth 1 -type f | wc -l)
+  left=$(find "$dl" -maxdepth 1 -type f ! -name '.*' | wc -l)
   log "$album: $moved files -> $folder$( [ "$left" -gt 0 ] && echo "; $left left in Inbox (no date taken)")"
-  [ "$left" -eq 0 ] && rmdir "$dl" 2>/dev/null
+  [ "$left" -eq 0 ] && rm -f "$dl/.downloaded" && rmdir "$dl" 2>/dev/null
 
   # 3. Immich: scan the library, wait until it has read the event folder, then GPS.
   for lib in $("${PSQL[@]}" -c 'SELECT id FROM library WHERE "deletedAt" IS NULL;'); do
