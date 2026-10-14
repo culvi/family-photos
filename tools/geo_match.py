@@ -141,6 +141,8 @@ def main(argv=None):
     ap.add_argument("--outing-gap", type=float, default=45, help="minutes without photos that start a new outing")
     ap.add_argument("--tz-hours", type=float, default=0, help="show times in this UTC offset (Japan = 9)")
     ap.add_argument("--accept", default="", help="outing numbers to set to their suggested place, e.g. 1,2,5")
+    ap.add_argument("--auto-minutes", type=float, default=0,
+                    help="accept every outing whose nearest phone GPS is within this many minutes")
     ap.add_argument("--place", action="append", default=[], help="set an outing to a known spot: 5=35.0089,135.6747 (repeatable)")
     args = ap.parse_args(argv)
 
@@ -161,6 +163,12 @@ def main(argv=None):
                 line += f"\n      phone GPS {when}: https://maps.google.com/?q={best[1]:.5f},{best[2]:.5f}"
             print(line)
         picked = {int(x) for x in args.accept.split(",") if x.strip()}
+        if args.auto_minutes:
+            auto = {n for n, (g, best) in enumerate(groups, 1) if best and best[0] <= args.auto_minutes * 60}
+            left = [n for n in range(1, len(groups) + 1) if n not in auto]
+            print(f"\nAuto-accepted (phone GPS within {args.auto_minutes:g} min): {sorted(auto) or 'none'}")
+            print(f"NEEDS-YOU: {left}" if left else "Nothing left to decide.")
+            picked |= auto
         manual = {}
         for spec in args.place:
             n, coords = spec.split("=")

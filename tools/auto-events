@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# Hands-off phone-photos-to-event pipeline. Runs hourly from cron; safe to run by hand.
+#
+#   auto-events add "2025-3 El Salvador" ...   queue iPhone albums (names like "YYYY-M Event")
+#   auto-events list                           show the queue and what's done
+#   auto-events                                one pass now (what cron runs)
+#   auto-events --install                      run it every hour (cron)
+#
+# For each queued album, once Apple lets icloudpd download it:
+#   1. downloads it to Inbox/iPhone/<album>
+#   2. renames to YYYY-MM-<IMG number>-<Event>-WCN.ext, adds © Will Neville / creator / event keyword,
+#      and moves the files into the existing event folder (Photos/YYYY/YYYY-M Event)
+#   3. has Immich scan, waits for it, then gives camera photos GPS where a phone photo was
+#      within 60 minutes (geo-match). Outings further off are listed for you.
+# Left for you: Lightroom -> right-click the event folder -> Synchronize Folder.
+# Log: ~/auto-events.log
+set -uo pipefail
+
+REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+TOOLS="$REPO/tools"
+STATE="$HOME/.auto-events"; mkdir -p "$STATE"
+QUEUE="$STATE/queue"; DONE="$STATE/done"; touch "$QUEUE" "$DONE"
+INBOX="${INBOX:-/mnt/Media-Storage/Inbox/iPhone}"
+CONF="$HOME/.icloudpd"
+LOG="$HOME/auto-events.log"
+GPS_MINUTES="${GPS_MINUTES:-60}"
+COPYRIGHT="© Will Neville"; CREATOR="Will Neville"
+
+case "${1:-}" in
+  add) shift; for a in "$@"; do grep -qxF "$a" "$QUEUE" || echo "$a" >> "$QUEUE"; echo "queued: $a"; done; exit ;;
+  list) echo "Waiting:"; sed 's/^/  /' "$QUEUE"; echo "Done:"; sed 's/^/  /' "$DONE"; exit ;;
+  --install)
+    line="7 * * * * $TOOLS/auto-events >/dev/null 2>&1"
+    ( crontab -l 2>/dev/null | grep -v "tools/auto-events"; echo "$line" ) | crontab -
+    echo "Installed: runs every hour at :07. Log: $LOG"; exit ;;
+esac
+
+exec 9>"$STATE/lock"; flock -n 9 || exit 0     # one run at a time
+log() { echo "$(date '+%F %T') $*" | tee -a "$LOG"; }
+set -a; . "$REPO/.env"; set +a
+KEY="$(cat "$HOME/.immich-admin-key" 2>/dev/null)"
+APPLE_ID="$(cat "$CONF/username" 2>/dev/null)"
+PSQL=(docker exec -i immich_postgres psql -U postgres -d immich -At)
+EXIF=(docker run --rm -v /mnt/Media-Storage:/mnt/Media-Storage -v "$STATE:$STATE" alpine:3.20 sh -c)
+
+process() {
+  local album="$1" dl="$INBOX/$1" work="$STATE/work"
+  mkdir -p "$dl" "$work"; rm -f "$work"/*
+
+  # 1. Download (no prompts; if iCloud wants a new sign-in, say so and stop).
+  out=$(docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$dl:/data" -v "$CONF:/cookies" \
+        icloudpd/icloudpd:latest icloudpd --directory /data --cookie-directory /cookies \
+        --username "$APPLE_ID" --log-level info --no-progress-bar \
+        --album "$album" --folder-structure none --skip-live-photos 2>&1 </dev/null)
+  if grep -q "not finished indexing" <<<"$out"; then log "$album: Apple not ready yet"; return 1; fi
+  if grep -qiE "password|two-factor|2fa|authenticat" <<<"$out" && ! grep -q "All photos" <<<"$out"; then
+    log "$album: iCloud sign-in expired. Run 'pull-iphone --list' once and enter the code."; return 1
+  fi
+  grep -q "All photos" <<<"$out" || { log "$album: download didn't finish: $(tail -1 <<<"$out")"; return 1; }
+  [ -n "$(ls -A "$dl")" ] || { log "$album: album is empty"; return 1; }
+
+  # 2. Plan names, write metadata, move into the event folder.
+  "${EXIF[@]}" "apk add -q exiftool >/dev/null && exiftool -q -q -csv -DateTimeOriginal -CreateDate '$dl' > '$work/dump.csv'"
+  plan=$(PHOTOS=/mnt/Media-Storage/Photos python3 "$TOOLS/auto_events.py" "$work/dump.csv" "$album" "$work/plan.csv" 2>&1) \
+    || { log "$album: $plan (make the folder in Lightroom, then it retries next hour)"; return 1; }
+  folder=$(awk -F'\t' '$1=="FOLDER"{print $2}' <<<"$plan")
+  python3 - "$work/plan.csv" "$work" "$COPYRIGHT" "$CREATOR" <<'PY'
+import csv, sys
+plan, work, rights, creator = sys.argv[1:5]
+rows = list(csv.DictReader(open(plan)))
+vid = (".mov", ".mp4", ".m4v")
+open(work + "/meta.txt", "w").write("".join(r["SourceFile"] + "\n" for r in rows if not r["SourceFile"].lower().endswith(vid)))
+kw = rows[0]["Keywords"] if rows else ""
+args = [f"-EXIF:Copyright={rights}", f"-XMP-dc:Rights={rights}", f"-EXIF:Artist={creator}",
+        f"-XMP-dc:Creator={creator}", f"-XMP-dc:Subject-={kw}", f"-XMP-dc:Subject+={kw}"]
+open(work + "/args.txt", "w").write("\n".join(args) + "\n")
+open(work + "/moves.tsv", "w").write("".join(r["SourceFile"] + "\t" + r["Dest"] + "\n" for r in rows))
+PY
+  if [ -s "$work/meta.txt" ]; then
+    "${EXIF[@]}" "apk add -q exiftool >/dev/null && exiftool -q -q -overwrite_original_in_place -@ '$work/args.txt' -@ '$work/meta.txt'"
+  fi
+  moved=0
+  while IFS=$'\t' read -r src dest; do
+    mv -n "$src" "$dest" && moved=$((moved + 1))
+  done < "$work/moves.tsv"
+  left=$(find "$dl" -maxdepth 1 -type f | wc -l)
+  log "$album: $moved files -> $folder$( [ "$left" -gt 0 ] && echo "; $left left in Inbox (no date taken)")"
+  [ "$left" -eq 0 ] && rmdir "$dl" 2>/dev/null
+
+  # 3. Immich: scan the library, wait until it has read the event folder, then GPS.
+  for lib in $("${PSQL[@]}" -c 'SELECT id FROM library WHERE "deletedAt" IS NULL;'); do
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$IMMICH_URL/api/libraries/$lib/scan" -H "x-api-key: $KEY")
+    [ "$code" = "204" ] || log "$album: Immich scan said $code (key needs library.update)"
+  done
+  base=$(basename "$folder")
+  want=$(find "$folder" -maxdepth 1 -type f ! -iname '*.xmp' ! -name '.*' | wc -l)
+  for _ in $(seq 60); do
+    have=$("${PSQL[@]}" -c "SELECT count(*) FROM asset a JOIN asset_exif e ON e.\"assetId\"=a.id WHERE a.\"deletedAt\" IS NULL AND a.\"originalPath\" LIKE '%/$base/%';")
+    [ "${have:-0}" -ge "$want" ] && break
+    sleep 30
+  done
+  read -r from to < <(python3 - "$album" <<'PY'
+import re, sys, datetime as d
+y, m = map(int, re.match(r"(\d{4})-(\d{1,2})", sys.argv[1]).groups())
+a = d.date(y, m, 1) - d.timedelta(days=7)
+b = (d.date(y + (m == 12), m % 12 + 1, 1)) + d.timedelta(days=7)
+print(a, b)
+PY
+)
+  geo=$("$TOOLS/geo-match" "/$base/" "$from" "$to" --outings --auto-minutes "$GPS_MINUTES" 2>&1)
+  echo "$geo" > "$STATE/geo-$base.txt"
+  log "$album: GPS: $(grep -E 'Auto-accepted|NEEDS-YOU|Nothing left|Checked:|Stopped' <<<"$geo" | tr '\n' ' ')"
+  grep -q NEEDS-YOU <<<"$geo" && log "$album: outings to decide are in $STATE/geo-$base.txt"
+  log "$album: DONE. Lightroom: right-click '$base' -> Synchronize Folder."
+  return 0
+}
+
+[ -n "$APPLE_ID" ] || { log "No Apple ID saved; run 'pull-iphone --list' once."; exit 1; }
+while IFS= read -r album; do
+  [ -n "$album" ] || continue
+  if process "$album"; then
+    grep -vxF "$album" "$QUEUE" > "$QUEUE.tmp"; mv "$QUEUE.tmp" "$QUEUE"
+    echo "$album" >> "$DONE"
+  fi
+done < <(cat "$QUEUE")
