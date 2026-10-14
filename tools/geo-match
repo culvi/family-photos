@@ -35,10 +35,33 @@ DIR="$(python3 -c 'import csv,os; r=list(csv.reader(open("geo-xmp.csv"))); print
 if [ ! -d "$DIR" ]; then
   echo "Can't find $DIR on this machine; nothing written." >&2; exit 1
 fi
-echo "Writing GPS into the .xmp files in $DIR ..."
-docker run --rm -v "$DIR:$DIR" -v "$HOME/geo-xmp.csv:/geo-xmp.csv:ro" alpine:3.20 sh -c \
-  "apk add -q exiftool >/dev/null && exiftool -q -csv=/geo-xmp.csv -overwrite_original_in_place -ext xmp '$DIR'"
-echo "Checked: $(grep -l -i GPSLatitude "$DIR"/*.xmp | wc -l) .xmp files in that folder now have GPS."
+# Split: RAW sidecars (.xmp) get XMP GPS; JPG/HEIC get it written inside the file (EXIF + XMP).
+python3 - <<'PY'
+import csv
+rows = list(csv.reader(open("geo-xmp.csv")))[1:]
+side = [r for r in rows if r[0].lower().endswith(".xmp")]
+emb = [r for r in rows if not r[0].lower().endswith(".xmp")]
+with open("geo-side.csv", "w", newline="") as f:
+    w = csv.writer(f); w.writerow(["SourceFile", "XMP-exif:GPSLatitude", "XMP-exif:GPSLongitude"]); w.writerows(side)
+with open("geo-emb.csv", "w", newline="") as f:
+    w = csv.writer(f)
+    w.writerow(["SourceFile", "EXIF:GPSLatitude", "EXIF:GPSLatitudeRef", "EXIF:GPSLongitude", "EXIF:GPSLongitudeRef",
+                "XMP-exif:GPSLatitude", "XMP-exif:GPSLongitude"])
+    w.writerows([[p, la, la, lo, lo, la, lo] for p, la, lo in emb])
+open("geo-side.txt", "w").write("".join(r[0] + "\n" for r in side))
+open("geo-emb.txt", "w").write("".join(r[0] + "\n" for r in emb))
+print(f"Writing GPS: {len(side)} RAW sidecars, {len(emb)} photos directly")
+PY
+echo "Folder: $DIR"
+docker run --rm -v "$DIR:$DIR" -v "$HOME:/w:ro" alpine:3.20 sh -c '
+  apk add -q exiftool >/dev/null
+  [ -s /w/geo-side.txt ] && exiftool -q -q -csv=/w/geo-side.csv -overwrite_original_in_place -@ /w/geo-side.txt
+  [ -s /w/geo-emb.txt ] && exiftool -q -q -csv=/w/geo-emb.csv -overwrite_original_in_place -@ /w/geo-emb.txt
+  cat /w/geo-side.txt /w/geo-emb.txt > /tmp/all.txt
+  t=$(grep -c . /tmp/all.txt)
+  n=$(exiftool -q -q -T -GPSLatitude -@ /tmp/all.txt | grep -vc "^-$")
+  echo "Checked: $n of $t now have GPS."'
+rm -f geo-side.csv geo-emb.csv geo-side.txt geo-emb.txt
 
 # Ask Immich to re-read just those photos.
 KEY=""; [ -s "$HOME/.immich-admin-key" ] && KEY="$(cat "$HOME/.immich-admin-key")"

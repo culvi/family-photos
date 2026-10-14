@@ -24,6 +24,10 @@ import urllib.request
 from datetime import datetime, timezone
 
 
+RAW = {".arw", ".cr2", ".cr3", ".nef", ".raf", ".orf", ".rw2", ".pef", ".srw"}
+VIDEO = {".mov", ".mp4", ".m4v", ".avi", ".mts", ".m2ts"}
+
+
 def parse_time(text: str) -> float:
     text = text.strip().replace(" ", "T")
     if text.endswith("+00"):
@@ -166,12 +170,18 @@ def main(argv=None):
         if picked:
             # Written into each photo's .xmp sidecar (by exiftool, via the geo-match wrapper),
             # so Lightroom and Immich both read it from the file and rescans keep it.
-            rows_out, ids = [], []
+            rows_out, ids, skipped = [], [], 0
             for n, (g, best) in enumerate(groups, 1):
                 spot = manual.get(n) or (best[1:] if best and n in picked else None)
                 if n in picked and spot:
                     for t, a, path in g:
-                        rows_out.append([os.path.splitext(path)[0] + ".xmp", f"{spot[0]:.6f}", f"{spot[1]:.6f}"])
+                        base, ext = os.path.splitext(path)
+                        if ext.lower() in VIDEO:
+                            skipped += 1
+                            continue
+                        # RAW: Lightroom keeps metadata in a .xmp sidecar. JPG/HEIC/etc: inside the file.
+                        target = base + ".xmp" if ext.lower() in RAW else path
+                        rows_out.append([target, f"{spot[0]:.6f}", f"{spot[1]:.6f}"])
                         ids.append(a)
             with open(f"{args.out}-xmp.csv", "w", newline="") as handle:
                 w = csv.writer(handle)
@@ -179,6 +189,8 @@ def main(argv=None):
                 w.writerows(rows_out)
             with open(f"{args.out}-ids.txt", "w") as handle:
                 handle.write("\n".join(ids))
+            if skipped:
+                print(f"\nSkipped {skipped} videos (left as they are).")
             print(f"\nPrepared {len(rows_out)} locations from outings {sorted(picked)} -> {args.out}-xmp.csv")
         else:
             print("\nPreview only. To set some: --accept 1,2,5 and/or --place 5=lat,lon")
