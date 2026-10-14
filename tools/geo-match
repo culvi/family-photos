@@ -35,6 +35,17 @@ DIR="$(python3 -c 'import csv,os; r=list(csv.reader(open("geo-xmp.csv"))); print
 if [ ! -d "$DIR" ]; then
   echo "Can't find $DIR on this machine; nothing written." >&2; exit 1
 fi
+# A RAW with no .xmp yet would get a GPS-only sidecar, and Lightroom's "Read Metadata from Files"
+# would then blank its keywords/edits. Stop and have Lightroom write full sidecars first.
+missing=$(python3 -c '
+import csv, os
+r = list(csv.reader(open("geo-xmp.csv")))[1:]
+print(sum(1 for p, *_ in r if p.lower().endswith(".xmp") and not os.path.exists(p)))')
+if [ "$missing" != "0" ] && [ "${GEO_FORCE:-}" != "1" ]; then
+  echo "Stopped: $missing RAW photos have no .xmp sidecar yet. Nothing written."
+  echo "Lightroom: select that folder's photos -> Metadata -> Save Metadata to Files (Cmd+S), then run this again."
+  exit 1
+fi
 # Split: RAW sidecars (.xmp) get XMP GPS; JPG/HEIC get it written inside the file (EXIF + XMP).
 python3 - <<'PY'
 import csv
