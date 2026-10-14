@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Hands-off phone-photos-to-event pipeline. Runs hourly from cron; safe to run by hand.
+# Hands-off phone-photos-to-event pipeline. Runs every 30 min from cron; safe to run by hand.
 #
 #   auto-events add "2025-3 El Salvador" ...   queue iPhone albums (names like "YYYY-M Event")
 #   auto-events list                           show the queue and what's done
 #   auto-events                                one pass now (what cron runs)
-#   auto-events --install                      run it every hour (cron)
+#   auto-events --install                      run it every 30 minutes (cron)
 #   auto-events --setup-notify                 push to your phone via Home Assistant
 #   auto-events --test-notify                  send a test push
 #
@@ -32,9 +32,9 @@ case "${1:-}" in
   add) shift; for a in "$@"; do grep -qxF "$a" "$QUEUE" || echo "$a" >> "$QUEUE"; echo "queued: $a"; done; exit ;;
   list) echo "Waiting:"; sed 's/^/  /' "$QUEUE"; echo "Done:"; sed 's/^/  /' "$DONE"; exit ;;
   --install)
-    line="7 * * * * $TOOLS/auto-events >/dev/null 2>&1"
+    line="7,37 * * * * $TOOLS/auto-events >/dev/null 2>&1"
     ( crontab -l 2>/dev/null | grep -v "tools/auto-events"; echo "$line" ) | crontab -
-    echo "Installed: runs every hour at :07. Log: $LOG"; exit ;;
+    echo "Installed: runs every 30 min (:07 and :37). Log: $LOG"; exit ;;
   --setup-notify)
     read -r -p "Home Assistant URL [http://127.0.0.1:8123]: " url; url="${url:-http://127.0.0.1:8123}"
     read -r -s -p "Home Assistant long-lived token (not shown): " tok; echo
