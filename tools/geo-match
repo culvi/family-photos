@@ -36,8 +36,6 @@ if [ ! -d "$DIR" ]; then
   echo "Can't find $DIR on this machine; nothing written." >&2; exit 1
 fi
 # A RAW with no .xmp yet would get a GPS-only sidecar, and Lightroom's "Read Metadata from Files"
-# would then blank its keywords/edits. Stop and have Lightroom write full sidecars first.
-# A RAW with no .xmp yet would get a GPS-only sidecar, and Lightroom's "Read Metadata from Files"
 # would then blank its keywords/edits. Skip those (listed) and write the rest.
 python3 - <<'PY'
 import csv, os
