@@ -15,6 +15,7 @@ import re
 import sys
 
 PHOTOS = os.environ.get("PHOTOS", "/mnt/Media-Storage/Photos")
+VIDEO = {".mov", ".mp4", ".m4v", ".avi", ".mts"}
 
 
 def event_parts(album: str):
@@ -70,7 +71,9 @@ def main(dump: str, album: str, out: str):
         while cand in taken:
             cand, n = f"{new}-{n}{ext}", n + 1
         taken.add(cand)
-        plan.append([src, os.path.join(folder, cand), name])
+        # Videos live in the matching folder under Videos (Photos/2024/X -> Videos/2024/X).
+        home = folder.replace("/Photos/", "/Videos/", 1) if ext.lower() in VIDEO else folder
+        plan.append([src, os.path.join(home, cand), name])
     with open(out, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["SourceFile", "Dest", "Keywords"])

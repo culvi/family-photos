@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Move videos out of the Photos tree into the matching folder under Videos, keeping the same
+# relative path (Photos/2024/2024-8 Jamaica/x.MOV -> Videos/2024/2024-8 Jamaica/x.MOV).
+#
+#   move-videos          show what would move (nothing changes)
+#   move-videos --go     move them, then have Immich rescan
+set -uo pipefail
+PHOTOS=/mnt/Media-Storage/Photos
+VIDEOS=/mnt/Media-Storage/Videos
+GO="${1:-}"
+
+mapfile -d '' FILES < <(find "$PHOTOS" -type f \( -iname '*.mov' -o -iname '*.mp4' -o -iname '*.m4v' -o -iname '*.avi' -o -iname '*.mts' \) -print0)
+[ "${#FILES[@]}" -gt 0 ] || { echo "No videos in $PHOTOS."; exit 0; }
+
+moved=0; clash=0
+for f in "${FILES[@]}"; do
+  rel="${f#"$PHOTOS"/}"; dest="$VIDEOS/$rel"
+  if [ -e "$dest" ]; then clash=$((clash + 1)); echo "  already there, left alone: $rel"; continue; fi
+  if [ "$GO" = "--go" ]; then
+    mkdir -p "$(dirname "$dest")" && mv -n "$f" "$dest" && moved=$((moved + 1))
+    # Camera sidecars that belong to the video (same name, .xmp/.XML) travel with it.
+    for s in "${f%.*}".xmp "${f%.*}".XML "${f%.*}".xml "${f%.*}M01.XML"; do
+      [ -e "$s" ] && mv -n "$s" "$(dirname "$dest")/"
+    done
+  fi
+done
+
+echo
+printf '%s\n' "${FILES[@]}" | sed "s|^$PHOTOS/||; s|/[^/]*$||" | sort | uniq -c | sort -rn
+if [ "$GO" != "--go" ]; then
+  echo; echo "${#FILES[@]} videos would move to the same folders under $VIDEOS ($clash already there)."
+  echo "Run 'move-videos --go' to move them."
+  exit 0
+fi
+echo; echo "Moved $moved of ${#FILES[@]} videos into $VIDEOS ($clash skipped: same name already there)."
+
+# Immich: rescan so it finds them in Videos and marks the old Photos paths offline.
+REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+set -a; . "$REPO/.env"; set +a
+KEY="$(cat "$HOME/.immich-admin-key" 2>/dev/null)"
+for lib in $(docker exec -i immich_postgres psql -U postgres -d immich -At -c 'SELECT id FROM library WHERE "deletedAt" IS NULL;'); do
+  curl -s -o /dev/null -w "Immich scan: %{http_code}\n" -X POST "$IMMICH_URL/api/libraries/$lib/scan" -H "x-api-key: $KEY"
+done
+echo "Lightroom: right-click each of those folders -> Synchronize Folder, tick 'Remove missing photos'."

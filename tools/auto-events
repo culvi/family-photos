@@ -113,7 +113,7 @@ PY
   fi
   moved=0
   while IFS=$'\t' read -r src dest; do
-    mv -n "$src" "$dest" && moved=$((moved + 1))
+    mkdir -p "$(dirname "$dest")" && mv -n "$src" "$dest" && moved=$((moved + 1))
   done < "$work/moves.tsv"
   count=$(awk -F'\t' '$1=="COUNT"{print $2}' <<<"$plan")
   if [ "$moved" -lt "${count:-0}" ]; then
