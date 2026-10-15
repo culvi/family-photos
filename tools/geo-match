@@ -37,15 +37,21 @@ if [ ! -d "$DIR" ]; then
 fi
 # A RAW with no .xmp yet would get a GPS-only sidecar, and Lightroom's "Read Metadata from Files"
 # would then blank its keywords/edits. Stop and have Lightroom write full sidecars first.
-missing=$(python3 -c '
+# A RAW with no .xmp yet would get a GPS-only sidecar, and Lightroom's "Read Metadata from Files"
+# would then blank its keywords/edits. Skip those (listed) and write the rest.
+python3 - <<'PY'
 import csv, os
-r = list(csv.reader(open("geo-xmp.csv")))[1:]
-print(sum(1 for p, *_ in r if p.lower().endswith(".xmp") and not os.path.exists(p)))')
-if [ "$missing" != "0" ] && [ "${GEO_FORCE:-}" != "1" ]; then
-  echo "Stopped: $missing RAW photos have no .xmp sidecar yet. Nothing written."
-  echo "Lightroom: select that folder's photos -> Metadata -> Save Metadata to Files (Cmd+S), then run this again."
-  exit 1
-fi
+rows = list(csv.reader(open("geo-xmp.csv")))
+keep = [rows[0]] + [r for r in rows[1:] if not (r[0].lower().endswith(".xmp") and not os.path.exists(r[0]))]
+skip = [r[0] for r in rows[1:] if r[0].lower().endswith(".xmp") and not os.path.exists(r[0])]
+csv.writer(open("geo-xmp.csv", "w", newline="")).writerows(keep)
+if skip:
+    print(f"Skipped {len(skip)} RAW photos with no Lightroom sidecar yet:")
+    for p in skip[:10]:
+        print("   ", os.path.basename(p)[:-4])
+    print("  To include them: Lightroom -> select them -> Metadata -> Save Metadata to Files, then run this again.")
+PY
+[ "$(wc -l < geo-xmp.csv)" -gt 1 ] || { echo "Nothing to write."; exit 0; }
 # Split: RAW sidecars (.xmp) get XMP GPS; JPG/HEIC get it written inside the file (EXIF + XMP).
 python3 - <<'PY'
 import csv
