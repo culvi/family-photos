@@ -15,6 +15,8 @@
 #   3. has Immich scan, waits for it, then gives camera photos GPS where a phone photo was
 #      within 60 minutes (geo-match). Outings further off are listed for you.
 # Left for you: Lightroom -> right-click the event folder -> Synchronize Folder.
+# Also: videos uploaded by hand in the Immich phone app are moved to Videos/YYYY/YYYY-MM iPhone/
+# (then a push says they're safe to delete from the phone).
 # Log: ~/auto-events.log
 set -uo pipefail
 
@@ -154,6 +156,42 @@ PY
   notify "$album" "$album done: $moved phone photos in.${gps:+ GPS $gps.}${todo:+ Outings to decide: ${todo#NEEDS-YOU: }.} Lightroom: Synchronize Folder, then Read Metadata from Files."
   return 0
 }
+
+# Videos uploaded by hand from the Immich phone app: copy to Videos/YYYY/YYYY-MM iPhone/ (renamed
+# like everything else), check the copy, then trash Immich's upload copy; Immich shows the moved file.
+offload_videos() {
+  local rows n=0 bytes=0 ids=() dirs=()
+  mapfile -t rows < <("${PSQL[@]}" -F $'\t' -c "SELECT id, \"originalPath\", \"originalFileName\", to_char(\"localDateTime\",'YYYY'), to_char(\"localDateTime\",'YYYY-MM') FROM asset WHERE \"libraryId\" IS NULL AND \"deletedAt\" IS NULL AND type='VIDEO' AND \"createdAt\" < now() - interval '10 minutes' AND id NOT IN (SELECT \"livePhotoVideoId\" FROM asset WHERE \"livePhotoVideoId\" IS NOT NULL);")
+  [ "${#rows[@]}" -gt 0 ] || return 0
+  for row in "${rows[@]}"; do
+    IFS=$'\t' read -r id path name year month <<<"$row"
+    dir="/mnt/Media-Storage/Videos/$year/$month iPhone"; mkdir -p "$dir"
+    base="${name%.*}"; ext="${name##*.}"; num=$(echo "$base" | tr -cd '0-9'); num="${num:-$base}"
+    want=$(docker exec immich_server stat -c %s "$path" 2>/dev/null)
+    dest="$dir/$month-$num-iPhone-WCN.$ext"
+    # Same name already there: if it's the same size it's this video from an earlier run; else pick a new name.
+    if [ -e "$dest" ] && [ "$(stat -c %s "$dest")" != "$want" ]; then dest="$dir/$month-$num-iPhone-WCN-${id:0:6}.$ext"; fi
+    [ -e "$dest" ] || docker cp "immich_server:$path" "$dest" 2>/dev/null
+    have=$(stat -c %s "$dest" 2>/dev/null)
+    if [ -n "$want" ] && [ "$want" = "$have" ]; then
+      ids+=("\"$id\""); n=$((n + 1)); bytes=$((bytes + have)); dirs+=("$year/$month iPhone")
+    else
+      rm -f "$dest"; log "video offload: copy of $name didn't match; left it in Immich"
+    fi
+  done
+  [ "$n" -gt 0 ] || return 0
+  code=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "$IMMICH_URL/api/assets" -H "x-api-key: $KEY" \
+    -H "content-type: application/json" -d "{\"ids\":[$(IFS=,; echo "${ids[*]}")]}")
+  for lib in $("${PSQL[@]}" -c 'SELECT id FROM library WHERE "deletedAt" IS NULL;'); do
+    curl -s -o /dev/null -X POST "$IMMICH_URL/api/libraries/$lib/scan" -H "x-api-key: $KEY"
+  done
+  gb=$(awk "BEGIN{printf \"%.1f\", $bytes/1073741824}")
+  where=$(printf '%s\n' "${dirs[@]}" | sort -u | paste -sd, -)
+  log "video offload: $n videos ($gb GB) -> Videos/$where (Immich upload copies trashed: $code)"
+  rm -f "$STATE/notified-videos"
+  notify videos "$n video(s), $gb GB, offloaded to Videos/$where. Safe to delete from your phone."
+}
+offload_videos
 
 [ -n "$APPLE_ID" ] || { log "No Apple ID saved; run 'pull-iphone --list' once."; exit 1; }
 while IFS= read -r album; do
